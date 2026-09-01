@@ -1,5 +1,10 @@
 """Tests for the executable SDK foundation."""
 
+# Private usage is intentional where tests exercise transport-only construction seams.
+# pyright: reportPrivateUsage=false
+
+import importlib
+import inspect
 from dataclasses import FrozenInstanceError
 from typing import cast
 
@@ -17,7 +22,6 @@ from configuration_manager import (
     TransportTimeoutError,
 )
 from configuration_manager.config import ConfigManagerConfig
-from configuration_manager.pagination import Continuation
 from configuration_manager.transport import (
     AdminServiceSurface,
     EntityKeyQuery,
@@ -30,6 +34,7 @@ from configuration_manager.transport import (
     RawMethodResult,
     RawPage,
     RawRecord,
+    _Continuation,
 )
 
 
@@ -115,9 +120,10 @@ def test_page_materializes_items_and_hides_opaque_continuation() -> None:
     source.append(3)
     assert page.items == (1, 2)
     assert not page.has_next
-    continued = Page((1,), _continuation=Continuation(object()))
+    continued = Page[int]._from_transport((1,), _Continuation(object()))
     assert continued.has_next
     assert "Continuation" not in repr(continued)
+    assert tuple(inspect.signature(Page).parameters) == ("items",)
     assert not hasattr(page, "next")
     with pytest.raises(FrozenInstanceError):
         page.items = ()  # type: ignore[misc]
@@ -158,6 +164,50 @@ def test_capability_values_and_transport_are_strongly_typed() -> None:
     assert key_query.key == 1
     assert call.parameters["input"] == value
     assert transport.calls == []
+
+
+def test_entity_key_must_not_be_null() -> None:
+    """Entity lookup requests reject a null key at runtime boundaries."""
+    with pytest.raises(ValueError, match="must not be None"):
+        EntityKeyQuery(
+            AdminServiceSurface.V1,
+            "Device",
+            cast("bool | int | float | str", None),
+        )
+
+
+@pytest.mark.parametrize(
+    ("target", "key", "message"),
+    [
+        (MethodTarget.STATIC, 1, "must not have"),
+        (MethodTarget.INSTANCE, None, "requires"),
+    ],
+)
+def test_method_target_and_key_must_agree(
+    target: MethodTarget, key: bool | int | float | str | None, message: str
+) -> None:
+    """Provider method requests cannot represent impossible target/key pairs."""
+    with pytest.raises(ValueError, match=message):
+        ProviderMethodCall(
+            AdminServiceSurface.WMI,
+            "SMS_R_System",
+            "Example",
+            target,
+            key=key,
+        )
+
+
+@pytest.mark.parametrize(("entity", "method"), [("", "Example"), ("Device", " ")])
+def test_method_names_must_not_be_empty(entity: str, method: str) -> None:
+    """Provider method requests reject obviously empty names."""
+    with pytest.raises(ValueError, match="must not be empty"):
+        ProviderMethodCall(AdminServiceSurface.V1, entity, method, MethodTarget.STATIC)
+
+
+def test_auth_placeholder_module_is_removed() -> None:
+    """No meaningless executable authentication marker is published."""
+    with pytest.raises(ModuleNotFoundError):
+        importlib.import_module("configuration_manager.auth")
 
 
 def test_client_lifecycle_and_external_transport_ownership() -> None:

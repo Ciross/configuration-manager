@@ -6,9 +6,10 @@ from enum import StrEnum
 from types import MappingProxyType
 from typing import Protocol, TypeAlias
 
-from .pagination import Continuation, Page
+from .pagination import Page
 
 JsonScalar: TypeAlias = bool | int | float | str | None
+JsonNonNullScalar: TypeAlias = bool | int | float | str
 JsonValue: TypeAlias = JsonScalar | list["JsonValue"] | dict[str, "JsonValue"]
 RawRecord: TypeAlias = Mapping[str, JsonValue]
 RawMethodResult: TypeAlias = JsonValue
@@ -17,6 +18,18 @@ RawPage: TypeAlias = Page[RawRecord]
 
 def _empty_parameters() -> Mapping[str, JsonValue]:
     return MappingProxyType({})
+
+
+def _validate_non_null_key(value: object) -> None:
+    if value is None:
+        raise ValueError("entity key must not be None")
+
+
+@dataclass(frozen=True, slots=True)
+class _Continuation:
+    """Opaque state understood only by its originating transport."""
+
+    _value: object = field(repr=False)
 
 
 class AdminServiceSurface(StrEnum):
@@ -52,7 +65,7 @@ class EntityQuery:
     surface: AdminServiceSurface
     entity: str
     options: ODataQueryOptions = ODataQueryOptions()
-    continuation: Continuation | None = None
+    continuation: _Continuation | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,8 +74,12 @@ class EntityKeyQuery:
 
     surface: AdminServiceSurface
     entity: str
-    key: JsonScalar
+    key: JsonNonNullScalar
     options: ODataQueryOptions = ODataQueryOptions()
+
+    def __post_init__(self) -> None:
+        """Reject a null provider key even at untyped runtime boundaries."""
+        _validate_non_null_key(self.key)
 
 
 class MethodTarget(StrEnum):
@@ -80,8 +97,19 @@ class ProviderMethodCall:
     entity: str
     method: str
     target: MethodTarget
-    key: JsonScalar = None
+    key: JsonNonNullScalar | None = None
     parameters: Mapping[str, JsonValue] = field(default_factory=_empty_parameters)
+
+    def __post_init__(self) -> None:
+        """Reject structurally invalid names and method target/key combinations."""
+        if not self.entity.strip():
+            raise ValueError("entity must not be empty")
+        if not self.method.strip():
+            raise ValueError("method must not be empty")
+        if self.target is MethodTarget.STATIC and self.key is not None:
+            raise ValueError("a static method call must not have an entity key")
+        if self.target is MethodTarget.INSTANCE and self.key is None:
+            raise ValueError("an instance method call requires an entity key")
 
 
 class ProviderTransport(Protocol):

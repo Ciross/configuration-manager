@@ -2,16 +2,9 @@
 
 from collections.abc import Iterable
 from dataclasses import dataclass, field
-from typing import Generic, TypeVar
+from typing import Generic, Self, TypeVar
 
 T_co = TypeVar("T_co", covariant=True)
-
-
-@dataclass(frozen=True, slots=True)
-class Continuation:
-    """Internal transport-owned state; consumers must not interpret it."""
-
-    _value: object = field(repr=False)
 
 
 @dataclass(frozen=True, slots=True, init=False)
@@ -23,17 +16,19 @@ class Page(Generic[T_co]):
     """
 
     items: tuple[T_co, ...]
-    _continuation: Continuation | None = field(default=None, repr=False)
+    _continuation: object | None = field(default=None, repr=False)
 
-    def __init__(
-        self,
-        items: Iterable[T_co],
-        *,
-        _continuation: Continuation | None = None,
-    ) -> None:
+    def __init__(self, items: Iterable[T_co]) -> None:
         """Materialize ``items`` into an immutable tuple."""
         object.__setattr__(self, "items", tuple(items))
-        object.__setattr__(self, "_continuation", _continuation)
+        object.__setattr__(self, "_continuation", None)
+
+    @classmethod
+    def _from_transport(cls, items: Iterable[T_co], continuation: object) -> Self:
+        """Build a page with transport-owned, opaque continuation state."""
+        page = cls(items)
+        object.__setattr__(page, "_continuation", continuation)
+        return page
 
     @property
     def has_next(self) -> bool:
