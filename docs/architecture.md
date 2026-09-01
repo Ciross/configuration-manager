@@ -62,7 +62,7 @@ from configuration_manager import ConfigManager
 
 with ConfigManager(server="cm01.contoso.com") as client:
     device = client.devices.get(name="PC001")
-    first_page = client.collections.list(filter="Name ne null", page_size=100)
+    first_page = client.collections.list(filter="Name ne null")
 
     raw_page = client.raw.wmi.list(
         "SMS_R_System",
@@ -78,9 +78,10 @@ available in every ConfigMgr release.
 ### Responsibilities and configuration
 
 `ConfigManager` is a composition root and lifecycle owner. It validates and
-normalizes configuration, creates or accepts an authentication strategy and
-transport, owns resource-manager and raw namespace access, and closes what it
-owns. It does not contain resource mapping or provider business rules.
+normalizes configuration, constructs the built-in AdminService transport or
+accepts a fully configured transport, owns resource-manager and raw namespace
+access, and closes what it owns. It does not contain resource mapping or
+provider business rules.
 
 Construction performs validation and local object creation only—never DNS,
 metadata discovery, authentication, or other remote I/O. Configuration is an
@@ -88,28 +89,29 @@ immutable value after construction. Proposed public constructor inputs are:
 
 | Input | Policy |
 | --- | --- |
-| `server` | Required SMS Provider FQDN or host name; no path, query, fragment, or embedded credentials. |
-| `scheme` | Defaults to `https`; non-HTTPS is not part of the supported default contract. |
-| `port` | Optional; defaults to the scheme default (443 for HTTPS). |
-| `auth` | Optional authentication strategy; omission means the platform-appropriate current-credential strategy if supported. |
+| `server` | Required SMS Provider FQDN or host name; implies HTTPS and accepts no scheme, path, query, fragment, or embedded credentials. |
+| `port` | Not frozen into the initial public signature. An optional non-default HTTPS port requires a demonstrated supported deployment before implementation. |
+| `auth` | Optional authentication strategy for the built-in AdminService transport; omission means the platform-appropriate current-credential strategy if supported. |
 | `timeout` | A typed total/phase timeout policy, never an unbounded implicit wait. Exact defaults require implementation testing. |
 | `verify_tls` | `True` by default; `False` requires an explicit argument. A CA bundle/path may be considered during implementation. |
 | `user_agent` | Optional additive application token; the SDK's name/version remains present and values are validated. |
-| `base_url` | Advanced alternative for CMG/reverse-proxy paths; mutually exclusive with host components and never inferred from arbitrary URLs. |
-| `transport` | Advanced injection point for testing or a supported backend; mutually exclusive with transport-building inputs as needed. |
+| `base_url` | Advanced HTTPS alternative for CMG/reverse-proxy paths; mutually exclusive with `server` and never inferred from arbitrary URLs. |
+| `transport` | Advanced injection point for a fully configured supported backend; mutually exclusive with built-in AdminService construction inputs, including `server`, `base_url`, `auth`, TLS, and timeout options. |
 
 `site_code` is not required for AdminService: the documented routes are rooted
 at an SMS Provider host and do not take a site code. A future direct WMI
 transport may need it, and site information may be discovered remotely on first
 use where reliable. Discovery must not happen in the constructor.
 
-Normalization lowercases the scheme and DNS host, preserves an explicit port
-and advanced base path, rejects user-info and route suffixes supplied as a
-`server`, removes no meaningful CMG path, and builds the two route roots
-internally. The simple form is a host, not
-`https://host/AdminService`. IPv6 and internationalized-name rules remain an
-implementation detail to test. Redirects must not silently cross origins with
-credentials.
+The host-oriented form always means HTTPS. Normalization lowercases the DNS
+host, rejects schemes, ports, user-info, and route suffixes supplied as a
+`server`, removes no meaningful path from an advanced HTTPS `base_url`, and
+builds the two route roots internally. The simple form is a host, not
+`https://host/AdminService`; an advanced base URL must still use HTTPS in
+supported production configuration. Tests use transport injection or controlled
+internal seams, never a public insecure HTTP mode. IPv6, internationalized-name,
+and non-default HTTPS port support remain implementation-review items.
+Redirects must not silently cross origins with credentials.
 
 ### Lifetime and ownership
 
@@ -117,6 +119,9 @@ credentials.
 - An injected transport has an explicit ownership option; the safe default is
   that the injector retains ownership. This must be finalized with the concrete
   constructor rather than guessed by duck typing.
+- A fully constructed injected transport already owns or references whatever
+  authentication and configuration it needs. The client does not apply an
+  AdminService authentication strategy to it.
 - The synchronous context manager returns the client and always calls
   `close()`. `close()` is idempotent.
 - Any operation after close raises an SDK lifecycle/configuration error; already
@@ -125,10 +130,11 @@ credentials.
   eagerly without I/O and cached by identity for the client's lifetime. Query
   results and mutable server state are never implicitly cached.
 - One client should be reused to benefit from HTTP connection pooling.
-- The initial contract does **not** promise that a client, its auth strategy, or
-  iterators are thread-safe. Separate clients per concurrently executing thread
-  are the portable rule until authentication adapters and transport behavior
-  are validated. Immutable models are safe to share.
+- The initial contract does **not** promise that a client, its built-in
+  AdminService auth strategy, or iterators are thread-safe. Separate clients per
+  concurrently executing thread are the portable rule until authentication
+  adapters and transport behavior are validated. Immutable models are safe to
+  share.
 
 ## Layering and dependency rules
 
@@ -176,11 +182,12 @@ close() -> None
 ```
 
 Requests describe a provider surface/entity or class, typed key, explicit OData
-options, optional opaque continuation, page-size preference, and timeout
-override. They do not expose HTTP methods, paths, header mappings, or library
-objects. `invoke_method` distinguishes static and instance targets and retains
-named JSON-compatible parameters. Support is capability-checked; it does not
-claim every backend or provider class can invoke every operation.
+options, optional opaque continuation, and timeout override. They do not expose
+HTTP methods, paths, header mappings, or library objects. In particular, the
+contract has no client-controlled page-size preference. `invoke_method`
+distinguishes static and instance targets and retains named JSON-compatible
+parameters. Support is capability-checked; it does not claim every backend or
+provider class can invoke every operation.
 
 `RawPage` carries a tuple/sequence of records, an opaque continuation token,
 and available count/context metadata. Only the implementing transport may turn
@@ -212,6 +219,11 @@ Closing releases pooled connections and auth-owned resources.
 ## AdminService and the low-level API
 
 `raw` is a supported product surface, divided according to Microsoft's routes:
+
+> [!IMPORTANT]
+> `client.raw.wmi` means the **AdminService `/AdminService/wmi/` route over
+> HTTPS/OData**. It does not create a direct WMI/DCOM connection. A future direct
+> WMI transport is a separate architecture that requires its own ADR.
 
 ```python
 page = client.raw.wmi.list(
@@ -267,12 +279,20 @@ implementation; raw means provider-shaped, not unsafe.
 
 ## Authentication and security
 
-Authentication is a separate strategy subsystem. Conceptually an auth strategy
-can prepare an HTTP authentication integration for a specific origin, report
-platform support without network I/O, and close any resources it owns. The
-contract passes credentials through protected typed state, never general
-request dictionaries. It must be narrow enough to adapt to the chosen HTTP
-client rather than inventing a new authentication protocol.
+Authentication is a separate, **AdminService-specific** strategy subsystem:
+
+```text
+ConfigManager
+    └── built-in AdminService transport
+            └── AdminService authentication strategy
+```
+
+Conceptually, the strategy can prepare an HTTP authentication integration for a
+specific AdminService origin, report platform support without network I/O, and
+close any resources it owns. The contract passes credentials through protected
+typed state, never general request dictionaries. It is narrow enough to adapt
+to the chosen HTTP client rather than inventing a new authentication protocol.
+It is not a requirement of the generic high-level capability contract.
 
 The default goal for `ConfigManager(server=...)` is current-process Windows
 Integrated Authentication where supported, matching Microsoft's default-
@@ -285,7 +305,15 @@ Windows SSPI/current-token behavior, Kerberos on non-Windows platforms, SPN and
 delegation requirements, NTLM fallback policy, credential prompting, and CMG
 Microsoft Entra authentication require implementation ADRs and lab tests.
 There is no promise that omission of `auth` works on every platform. Unsupported
-defaults fail early with actionable `ConfigurationManagerAuthenticationError`.
+defaults fail early with actionable `AuthenticationError`.
+
+`transport=` and built-in AdminService construction inputs such as `auth=` are
+normally mutually exclusive. A fully constructed injected transport is
+responsible for its authentication and credential semantics; `ConfigManager`
+does not attempt to inject HTTP authentication into an arbitrary backend. A
+future direct WMI transport may need fundamentally different credential
+semantics and therefore requires its own ADR rather than implementing this
+AdminService authentication contract.
 
 Security invariants:
 
@@ -340,11 +368,14 @@ typed input models, idempotency/concurrency rules, and ADR review.
 
 ## OData query policy
 
-v0.1 uses a small, typed options object and keyword conveniences. It accepts an
-OData expression string as `filter`, property-name sequences for `select` and
-`expand`, ordering values, and bounded integer `top`/page-size controls only
-where the target route supports them. Python names omit `$`; the transport maps
-them to wire parameter names and performs URL percent-encoding exactly once.
+v0.1 raw access uses a small, typed options object and keyword conveniences. It
+accepts an OData expression string as `filter`, property-name sequences for
+`select` and `expand`, ordering values, and a bounded integer `top` only where
+the target route supports them. `top` represents OData `$top`: a limit on the
+number of items in the queried result. It is **not** a requested server page
+size. High-level query arguments are introduced only with actual resource
+implementations and lab evidence. Python names omit `$`; the transport maps them
+to wire parameter names and performs URL percent-encoding exactly once.
 
 The caller authors OData expression syntax and is responsible for semantically
 correct literals and property names. The SDK treats the expression as data,
@@ -362,14 +393,14 @@ rather than dictate the initial design.
 One-page retrieval is the default and visible behavior:
 
 ```python
-page: Page[Device] = client.devices.list(page_size=100)
+page: Page[Device] = client.devices.list()
 for item in page.items:
     ...
 
 if page.has_next:
     next_page = client.devices.next_page(page)
 
-for item in client.devices.iter(page_size=100):
+for item in client.devices.iter():
     ...  # each boundary may perform another request
 ```
 
@@ -379,6 +410,12 @@ hold a client or make `page.next()` perform hidden I/O. The manager's
 `next_page(page)` makes ownership explicit. `iter()` is deliberately named and
 documented as lazy, potentially unbounded network traversal; it fetches no page
 until iteration and yields page by page without accumulating all results.
+
+`list()` returns exactly the response page chosen by the service from one
+request. The public contract does not request a page size, and it does not treat
+OData `$top` as one. The server may choose its own page boundary and may return
+`@odata.nextLink`; after validation, `next_page(...)` and `iter()` follow that
+opaque continuation.
 
 Continuation is opaque even when AdminService returns `@odata.nextLink`. The
 transport validates that server links stay within the configured AdminService
@@ -390,28 +427,28 @@ between pages require lab validation. `list()` never means “download all.”
 
 ## Exception contract
 
-Proposed public hierarchy (names avoid built-in shadowing):
+The public hierarchy is (names avoid built-in shadowing):
 
 ```text
 ConfigurationManagerError
-├── ConfigurationManagerConfigurationError
-├── ConfigurationManagerLifecycleError
-├── ConfigurationManagerTransportError
-│   ├── ConfigurationManagerConnectionError
-│   ├── ConfigurationManagerTimeoutError
-│   └── ConfigurationManagerTLSVerificationError
-├── ConfigurationManagerAuthenticationError
-├── ConfigurationManagerAuthorizationError
-├── ConfigurationManagerQueryError
-├── ConfigurationManagerMethodError
-├── ConfigurationManagerServerError
-├── ConfigurationManagerNotFoundError
-└── ConfigurationManagerAmbiguousResultError
+├── ConfigurationError
+├── LifecycleError
+├── TransportError
+│   ├── TransportConnectionError
+│   ├── TransportTimeoutError
+│   └── TLSVerificationError
+├── AuthenticationError
+├── AuthorizationError
+├── QueryError
+├── MethodInvocationError
+├── ServerError
+├── NotFoundError
+└── AmbiguousResultError
 ```
 
-Names are verbose but unambiguous when imported directly. A concrete exception
-design may shorten leaf names after human review without changing the semantic
-categories.
+The root carries the product-specific name. Package context makes repetition on
+every leaf unnecessary, while `TransportConnectionError` and
+`TransportTimeoutError` deliberately avoid shadowing Python's built-ins.
 
 Translated errors preserve a safe message, causal exception via Python
 exception chaining, numeric HTTP status where applicable, ConfigMgr/OData error
@@ -530,9 +567,8 @@ Windows and non-Windows clients before implementation promises are made:
 9. Which ConfigMgr current-branch versions will v0.1 support, and should
    capabilities be discovered from `$metadata`, maintained in a tested version
    matrix, or both?
-10. Are `ConfigManager*Error` leaf names preferable to shorter names under the
-    package namespace, and what safe diagnostic detail do real error payloads
-    justify retaining?
+10. What safe diagnostic detail do real error payloads justify retaining
+    without exposing enterprise data or credentials?
 11. Can the selected HTTP/auth stack support safe concurrent use? Until proven,
     the client remains explicitly not thread-safe.
 
@@ -550,12 +586,16 @@ Windows and non-Windows clients before implementation promises are made:
   logic, and translate implementation-specific failures.
 - AdminService is the initial transport. `/AdminService/v1.0/` and
   `/AdminService/wmi/` remain distinct, first-class raw namespaces.
+- `raw.wmi` is the AdminService WMI route over HTTPS/OData, never an implication
+  of direct WMI/DCOM connectivity.
 - Raw AdminService access may return typed JSON-compatible values but never
   arbitrary cross-origin URL responses.
 - Pagination is explicit: `list()` fetches one page and `iter()` visibly opts
-  into lazy multi-page I/O; continuation state is opaque.
-- Authentication is strategy-based; credentials are neither persisted nor
-  logged, and provider RBAC remains authoritative.
+  into lazy multi-page I/O; continuation state is opaque and client-controlled
+  page size is not promised.
+- Built-in AdminService authentication is strategy-based; generic transports do
+  not consume that HTTP-oriented contract. Credentials are neither persisted
+  nor logged, and provider RBAC remains authoritative.
 - TLS verification is enabled by default and disabling it requires explicit
   user action.
 - The library uses standard logging without configuring handlers or logging

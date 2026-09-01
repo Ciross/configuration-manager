@@ -34,6 +34,14 @@ documentation before making changes, and prefer the smallest coherent change.
     default, and credential material is never persisted or logged.
 16. Domain models are immutable where practical and never perform network I/O.
     Resource managers own remote operations and return explicit typed pages.
+17. The normal AdminService configuration is HTTPS-only. Do not expose a public
+    protocol selector or an insecure HTTP test mode.
+18. `raw.wmi` means the AdminService WMI route over HTTPS/OData, not direct
+    WMI/DCOM. Direct WMI requires a separate ADR.
+19. Do not promise client-controlled page size. `$top` is an OData result limit;
+    server page boundaries and continuation remain server-driven and opaque.
+20. AdminService authentication belongs to its implementation, not the generic
+    transport contract. Injected transports arrive fully configured.
 
 ## Testing and quality
 

@@ -17,6 +17,9 @@ map provider data into domain models. In parallel, `client.raw.v1` and
 owned transport services and the same authentication, lifecycle, error, and
 configuration policies.
 
+Here `raw.wmi` names the AdminService WMI route over HTTPS/OData, not direct
+WMI/DCOM connectivity. A direct WMI backend requires a separate ADR.
+
 Dependencies point inward through contracts: resources may use provider-shaped
 transport operations and mappers; models know neither resources nor transport;
 transports know neither public domain models nor resource policy. Raw APIs may

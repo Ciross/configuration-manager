@@ -15,15 +15,22 @@ interface would speculate about untested equivalence.
 The high-level transport boundary is a small set of provider capabilities:
 query entities, get one entity, and invoke a named provider method. Typed
 request values carry entity/class name, key, query options, parameters,
-continuation, and timeout policy without URLs or HTTP verbs. Results carry raw
-records and opaque continuation information. Capabilities are added only when a
-resource needs them.
+continuation, and timeout policy without URLs or HTTP verbs. They do not carry a
+client-controlled page-size preference; server continuation and page boundaries
+remain opaque. Results carry raw records and opaque continuation information.
+Capabilities are added only when a resource needs them.
 
 AdminService also has a concrete, internal HTTP execution boundary responsible
 for URL construction, OData encoding, authentication application, pooling,
 TLS, response decoding, and error translation. The first-class raw
 AdminService namespaces use that concrete service directly because `/v1.0/`
 and `/wmi/` semantics need not be portable to direct WMI.
+
+The public authentication strategy belongs to this built-in AdminService
+implementation, not to every capability transport. A fully configured injected
+transport supplies its own authentication/configuration, so `transport=` is
+normally mutually exclusive with AdminService inputs such as `auth=`. A future
+direct WMI backend requires a separate authentication design.
 
 `httpx` is the leading implementation candidate for its synchronous client,
 pooling, timeout model, and authentication extension points, but dependency and
