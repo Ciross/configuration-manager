@@ -1,8 +1,9 @@
 # configuration-manager
 
 > [!IMPORTANT]
-> This project is in **very early development**. It does not yet provide a
-> Configuration Manager client or any Configuration Manager operations.
+> This project is in **very early development**. It provides typed configuration
+> and lifecycle foundations, but no Configuration Manager connectivity or
+> resource operations yet.
 
 `configuration-manager` is intended to become a strongly typed Python SDK for
 Microsoft Configuration Manager (ConfigMgr, formerly SCCM and MECM). It will
@@ -49,9 +50,19 @@ Low-level API
 AdminService / SMS Provider
 ```
 
-Authentication, transports, models, resources, exceptions, pagination, OData
-queries, and the shape of the low-level API will be designed separately before
-implementation.
+The first executable foundation includes the exception taxonomy, immutable
+configuration, typed pages, and provider capability contracts. A lifecycle-only
+client can be constructed without any remote activity:
+
+```python
+from configuration_manager import ConfigManager
+
+with ConfigManager(server="cm01.contoso.com") as client:
+    assert not client.closed
+```
+
+No query, resource, authentication, or AdminService HTTP operations are
+implemented yet.
 
 The resulting foundational contract and its decision records are documented in
 the [architecture guide](docs/architecture.md).
