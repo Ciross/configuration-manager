@@ -1,3 +1,39 @@
-"""A future strongly typed SDK for Microsoft Configuration Manager."""
+"""Strongly typed foundations for Microsoft Configuration Manager."""
 
-__all__: tuple[str, ...] = ()
+from .client import ConfigManager
+from .exceptions import (
+    AmbiguousResultError,
+    AuthenticationError,
+    AuthorizationError,
+    ConfigurationError,
+    ConfigurationManagerError,
+    LifecycleError,
+    MethodInvocationError,
+    NotFoundError,
+    QueryError,
+    ServerError,
+    TLSVerificationError,
+    TransportConnectionError,
+    TransportError,
+    TransportTimeoutError,
+)
+from .pagination import Page
+
+__all__ = (
+    "AmbiguousResultError",
+    "AuthenticationError",
+    "AuthorizationError",
+    "ConfigManager",
+    "ConfigurationError",
+    "ConfigurationManagerError",
+    "LifecycleError",
+    "MethodInvocationError",
+    "NotFoundError",
+    "Page",
+    "QueryError",
+    "ServerError",
+    "TLSVerificationError",
+    "TransportConnectionError",
+    "TransportError",
+    "TransportTimeoutError",
+)
