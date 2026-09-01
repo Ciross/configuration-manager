@@ -23,12 +23,25 @@ documentation before making changes, and prefer the smallest coherent change.
 10. Keep runtime dependencies minimal; every addition must be necessary and
     justified.
 11. Avoid unnecessary abstractions and premature generalization.
-12. Do not add asynchronous APIs until they have been explicitly designed.
-
-The architecture for authentication, transports, models, resources,
-exceptions, pagination, OData queries, and the low-level API will be specified
-separately before any of those areas are implemented. Do not pre-empt those
-decisions.
+12. The initial public API is synchronous. An async API requires a separate
+    design and must not distort the synchronous contracts.
+13. Treat `docs/architecture.md` and accepted ADRs in `docs/adr/` as the
+    foundational contract. Change an accepted decision deliberately, with a
+    superseding ADR when appropriate.
+14. AdminService is the first transport. Keep its versioned and WMI surfaces as
+    distinct, first-class low-level namespaces.
+15. Client construction performs no remote I/O. TLS verification is enabled by
+    default, and credential material is never persisted or logged.
+16. Domain models are immutable where practical and never perform network I/O.
+    Resource managers own remote operations and return explicit typed pages.
+17. The normal AdminService configuration is HTTPS-only. Do not expose a public
+    protocol selector or an insecure HTTP test mode.
+18. `raw.wmi` means the AdminService WMI route over HTTPS/OData, not direct
+    WMI/DCOM. Direct WMI requires a separate ADR.
+19. Do not promise client-controlled page size. `$top` is an OData result limit;
+    server page boundaries and continuation remain server-driven and opaque.
+20. AdminService authentication belongs to its implementation, not the generic
+    transport contract. Injected transports arrive fully configured.
 
 ## Testing and quality
 
@@ -41,9 +54,8 @@ decisions.
 5. Run Ruff linting and formatting checks, Pyright, and pytest before submitting
    changes. Use the commands documented in `README.md`.
 
-## Bootstrap scope
+## Implementation scope
 
-Do not implement Configuration Manager functionality during this bootstrap
-task. In particular, do not add clients, authentication, HTTP or WMI
-communication, resources, domain models, query builders, OData abstractions, or
-ConfigMgr-specific exceptions. Those features require separate design work.
+Implement new Configuration Manager functionality only after checking its
+scope and sequencing against `docs/architecture.md`. Do not bypass supported
+provider interfaces or turn documented future extensions into current facts.
