@@ -32,12 +32,12 @@ foundation. These facts require Windows smoke tests and real lab validation.
 
 ## Decision
 
-Use stable synchronous HTTPX with `httpx>=0.28.1,<1`. HTTPX 0.28.x is the stable
-line validated for this foundation and provides pooling, explicit finite
-timeouts, per-client TLS contexts, mock transports, and authentication flows.
-The broad `<1` project constraint avoids a prerelease 1.0 dependency while
-allowing compatible stable 0.x updates; the SSPI adapter's Windows-only extra
-currently further constrains its own compatible environment to HTTPX `<0.29`.
+Use stable synchronous HTTPX with `httpx>=0.28.1,<0.29`. HTTPX 0.28.x is the
+stable line validated and intentionally supported by this initial implementation;
+it provides pooling, explicit finite timeouts, per-client TLS contexts, mock
+transports, and authentication flows. The same minor line is used on every
+platform because the SSPI adapter already requires HTTPX `<0.29`; widening the
+range requires explicit compatibility testing.
 
 For verified clients, construct a fresh `truststore.SSLContext` using
 `ssl.PROTOCOL_TLS_CLIENT` and pass it to HTTPX. This uses the operating-system

@@ -17,8 +17,7 @@ from .config import ConfigManagerConfig
 from .exceptions import (
     AuthenticationError,
     AuthorizationError,
-    HTTPStatusError,
-    ResponseError,
+    LifecycleError,
     ServerError,
     TLSVerificationError,
     TransportConnectionError,
@@ -29,6 +28,18 @@ from .transport import AdminServiceSurface, JsonValue
 
 _DEFAULT_TIMEOUT = httpx.Timeout(30.0, connect=10.0)
 _MAX_RESPONSE_BYTES = 10 * 1024 * 1024
+
+
+class _AdminServiceResponseError(TransportError):
+    """Raised when an AdminService response cannot be safely consumed."""
+
+
+class _AdminServiceHTTPStatusError(TransportError):
+    """Raised for a status requiring later operation-level interpretation."""
+
+    def __init__(self, message: str, *, status_code: int) -> None:
+        super().__init__(message)
+        self.status_code = status_code
 
 
 def _system_ssl_context() -> ssl.SSLContext:
@@ -113,7 +124,9 @@ class AdminService:
         try:
             value = json.loads(content)
         except (json.JSONDecodeError, UnicodeDecodeError) as error:
-            raise ResponseError("AdminService returned malformed JSON") from error
+            raise _AdminServiceResponseError(
+                "AdminService returned malformed JSON"
+            ) from error
         return cast("JsonValue", value)
 
     def get_text(self, surface: AdminServiceSurface, path: str) -> str:
@@ -122,7 +135,9 @@ class AdminService:
         try:
             return content.decode("utf-8")
         except UnicodeDecodeError as error:
-            raise ResponseError("AdminService returned invalid UTF-8 text") from error
+            raise _AdminServiceResponseError(
+                "AdminService returned invalid UTF-8 text"
+            ) from error
 
     def _get_bytes(
         self,
@@ -131,6 +146,7 @@ class AdminService:
         *,
         params: Mapping[str, str] | None = None,
     ) -> bytes:
+        self._require_open()
         try:
             with self._client.stream(
                 "GET", self.url(surface, path, params=params)
@@ -139,12 +155,12 @@ class AdminService:
                 content = bytearray()
                 for chunk in response.iter_bytes():
                     if len(content) + len(chunk) > _MAX_RESPONSE_BYTES:
-                        raise ResponseError(
+                        raise _AdminServiceResponseError(
                             "AdminService response exceeded the safety limit"
                         )
                     content.extend(chunk)
                 return bytes(content)
-        except ResponseError:
+        except _AdminServiceResponseError:
             raise
         except httpx.TimeoutException as error:
             raise TransportTimeoutError("AdminService request timed out") from error
@@ -161,6 +177,10 @@ class AdminService:
 
     @staticmethod
     def _raise_for_status(status_code: int) -> None:
+        if 300 <= status_code < 400:
+            raise _AdminServiceHTTPStatusError(
+                f"AdminService returned HTTP {status_code}", status_code=status_code
+            )
         if status_code == 401:
             raise AuthenticationError("AdminService authentication failed")
         if status_code == 403:
@@ -168,9 +188,13 @@ class AdminService:
         if status_code >= 500:
             raise ServerError(f"AdminService returned HTTP {status_code}")
         if status_code >= 400:
-            raise HTTPStatusError(
+            raise _AdminServiceHTTPStatusError(
                 f"AdminService returned HTTP {status_code}", status_code=status_code
             )
+
+    def _require_open(self) -> None:
+        if self._closed:
+            raise LifecycleError("AdminService is closed")
 
     def close(self) -> None:
         """Release pooled connections exactly once."""

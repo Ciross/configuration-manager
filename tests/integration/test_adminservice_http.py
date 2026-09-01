@@ -11,14 +11,18 @@ import pytest
 from configuration_manager import (
     AuthenticationError,
     AuthorizationError,
-    HTTPStatusError,
-    ResponseError,
+    LifecycleError,
     ServerError,
     TLSVerificationError,
     TransportConnectionError,
     TransportTimeoutError,
 )
-from configuration_manager.adminservice import AdminService, _system_ssl_context
+from configuration_manager.adminservice import (
+    AdminService,
+    _AdminServiceHTTPStatusError,
+    _AdminServiceResponseError,
+    _system_ssl_context,
+)
 from configuration_manager.transport import AdminServiceSurface
 
 
@@ -59,13 +63,21 @@ def test_redirects_are_not_followed() -> None:
 
     def redirect(request: httpx.Request) -> httpx.Response:
         requests.append(request)
-        return httpx.Response(302, headers={"location": "https://evil.example/"})
+        return httpx.Response(
+            302, headers={"location": "https://evil.example/private-target"}
+        )
 
     admin = service(httpx.MockTransport(redirect))
-    with pytest.raises(ResponseError, match="malformed JSON"):
-        admin.get_json(AdminServiceSurface.V1, "$metadata")
+    with pytest.raises(_AdminServiceHTTPStatusError, match="HTTP 302") as caught:
+        admin.get_json(
+            AdminServiceSurface.V1,
+            "$metadata",
+            params={"$filter": "sensitive=value"},
+        )
     assert len(requests) == 1
     assert requests[0].url.host == "cm01.contoso.com"
+    assert "evil.example" not in str(caught.value)
+    assert "sensitive" not in str(caught.value)
 
 
 @pytest.mark.integration
@@ -76,7 +88,7 @@ def test_redirects_are_not_followed() -> None:
         (403, AuthorizationError),
         (500, ServerError),
         (503, ServerError),
-        (404, HTTPStatusError),
+        (404, _AdminServiceHTTPStatusError),
     ],
 )
 def test_status_translation(status: int, error: type[Exception]) -> None:
@@ -134,7 +146,7 @@ def test_json_decoding_size_guard_and_idempotent_cleanup() -> None:
     malformed = service(
         httpx.MockTransport(lambda _request: httpx.Response(200, content=b"{"))
     )
-    with pytest.raises(ResponseError) as caught:
+    with pytest.raises(_AdminServiceResponseError) as caught:
         malformed.get_json(AdminServiceSurface.V1, "Anything")
     assert isinstance(caught.value.__cause__, ValueError)
     malformed.close()
@@ -146,8 +158,28 @@ def test_json_decoding_size_guard_and_idempotent_cleanup() -> None:
             lambda _request: httpx.Response(200, content=b"x" * (10 * 1024 * 1024 + 1))
         )
     )
-    with pytest.raises(ResponseError, match="safety limit"):
+    with pytest.raises(_AdminServiceResponseError, match="safety limit"):
         oversized.get_json(AdminServiceSurface.V1, "Anything")
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("operation", ["json", "text"])
+def test_requests_after_close_raise_lifecycle_error(operation: str) -> None:
+    requests: list[httpx.Request] = []
+    admin = service(
+        httpx.MockTransport(
+            lambda request: (requests.append(request), httpx.Response(200))[1]
+        )
+    )
+    admin.close()
+    admin.close()
+
+    with pytest.raises(LifecycleError, match="closed"):
+        if operation == "json":
+            admin.get_json(AdminServiceSurface.V1, "Anything")
+        else:
+            admin.get_text(AdminServiceSurface.V1, "$metadata")
+    assert requests == []
 
 
 @pytest.mark.integration

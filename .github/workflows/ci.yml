@@ -51,5 +51,6 @@ jobs:
           enable-cache: true
           python-version: ${{ matrix.python-version }}
       - run: uv sync --locked
-      - name: Construct current-credential auth without traffic
-        run: uv run python -c "from configuration_manager.adminservice import windows_integrated_authentication; assert windows_integrated_authentication()"
+      - name: Construct complete Windows client without traffic
+        run: |
+          uv run python -c "from configuration_manager.adminservice import AdminService, windows_integrated_authentication; auth = windows_integrated_authentication(); client = AdminService('example.invalid', auth=auth); client.close(); assert client.closed"

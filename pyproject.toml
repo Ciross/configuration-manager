@@ -20,7 +20,7 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
-    "httpx>=0.28.1,<1",
+    "httpx>=0.28.1,<0.29",
     "httpx-negotiate-sspi[httpx]>=0.28.2,<0.29; sys_platform == 'win32'",
     "truststore>=0.10.4,<1",
 ]
