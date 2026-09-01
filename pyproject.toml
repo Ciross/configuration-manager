@@ -19,7 +19,11 @@ classifiers = [
     "Programming Language :: Python :: 3.14",
     "Typing :: Typed",
 ]
-dependencies = []
+dependencies = [
+    "httpx>=0.28.1,<1",
+    "httpx-negotiate-sspi[httpx]>=0.28.2,<0.29; sys_platform == 'win32'",
+    "truststore>=0.10.4,<1",
+]
 
 [dependency-groups]
 dev = [

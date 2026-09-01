@@ -4,7 +4,9 @@ This document is the implementation contract for the first public versions of
 `configuration-manager`. It describes intended interfaces; none of the examples
 below are implemented. The accepted decisions are split into [layering](adr/0001-sdk-layering.md),
 [transport strategy](adr/0002-transport-strategy.md), [domain models](adr/0003-domain-model-strategy.md),
-and [synchronous-first API](adr/0004-sync-api-first.md).
+and [synchronous-first API](adr/0004-sync-api-first.md). The implemented HTTP,
+TLS, and Windows authentication choices are recorded in
+[ADR 0005](adr/0005-adminservice-http-authentication.md).
 
 ## Evidence and limits
 
@@ -204,12 +206,11 @@ continuation validation, and status/error translation. It returns SDK raw
 values—not `httpx.Response`, auth-library objects, or arbitrary bytes—to the
 normal APIs.
 
-`httpx` is the likely future HTTP dependency: it offers a modern synchronous
-client, connection pooling, granular timeouts, and extension points. Its async
-support is not itself a reason to add async SDK APIs. Before adoption, a spike
-must validate Windows/Kerberos auth adapters, proxy behavior, certificate
-configuration, redirects, and supported Python versions. No HTTP dependency is
-added in this architecture task.
+The internal executor uses stable HTTPX 0.x with a synchronous pooled client,
+finite internal timeouts, disabled redirects, and a per-client system-trust SSL
+context. Its async support is not itself a reason to add async SDK APIs. Windows
+current-credential SSPI integration is implemented behind an internal adapter,
+but its ConfigMgr behavior, proxies, and concurrency still require lab evidence.
 
 Timeouts belong to immutable client configuration with per-operation override
 only where justified. TLS verification is on by default; disabling it is

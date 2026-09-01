@@ -1,9 +1,9 @@
 # configuration-manager
 
 > [!IMPORTANT]
-> This project is in **very early development**. It provides typed configuration
-> and lifecycle foundations, but no Configuration Manager connectivity or
-> resource operations yet.
+> This project is in **very early development**. It provides typed configuration,
+> lifecycle, and an internal AdminService HTTP/authentication foundation, but no
+> public Configuration Manager query or resource operations yet.
 
 `configuration-manager` is intended to become a strongly typed Python SDK for
 Microsoft Configuration Manager (ConfigMgr, formerly SCCM and MECM). It will
@@ -61,8 +61,12 @@ with ConfigManager(server="cm01.contoso.com") as client:
     assert not client.closed
 ```
 
-No query, resource, authentication, or AdminService HTTP operations are
-implemented yet.
+No public query, resource, or raw AdminService operations are implemented yet.
+The internal HTTP boundary uses stable HTTPX, operating-system certificate
+trust, finite timeouts, bounded response decoding, and disabled redirects.
+Windows current-credential Negotiate support is present but still requires
+validation against a real ConfigMgr environment before it is wired into the
+public client.
 
 The resulting foundational contract and its decision records are documented in
 the [architecture guide](docs/architecture.md).
@@ -89,6 +93,9 @@ Unit tests are isolated and require neither network access nor a Configuration
 Manager environment. Integration tests will use controlled or mocked services.
 Live tests are reserved for a real lab, are excluded by default, and must always
 be selected explicitly with `uv run pytest --run-live tests/live`.
+The Windows authentication probe additionally requires
+`CONFIGURATION_MANAGER_LIVE_SERVER` and a machine whose system store trusts the
+AdminService certificate chain.
 
 ## License
 

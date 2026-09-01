@@ -36,3 +36,20 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - run: uv sync --locked
       - run: uv run pytest -m "not live"
+
+  windows-auth:
+    name: Windows auth smoke (Python ${{ matrix.python-version }})
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.14"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          python-version: ${{ matrix.python-version }}
+      - run: uv sync --locked
+      - name: Construct current-credential auth without traffic
+        run: uv run python -c "from configuration_manager.adminservice import windows_integrated_authentication; assert windows_integrated_authentication()"
