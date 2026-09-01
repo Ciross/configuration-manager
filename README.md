@@ -53,6 +53,9 @@ Authentication, transports, models, resources, exceptions, pagination, OData
 queries, and the shape of the low-level API will be designed separately before
 implementation.
 
+The resulting foundational contract and its decision records are documented in
+the [architecture guide](docs/architecture.md).
+
 ## Python support
 
 Python 3.11 and newer are supported. Production code is fully typed, and the
