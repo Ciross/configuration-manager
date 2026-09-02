@@ -5,10 +5,12 @@
 
 from __future__ import annotations
 
+import math
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import cast
+from urllib.parse import quote
 
 import httpx2
 
@@ -139,7 +141,62 @@ class _AdminServiceProviderTransport:
         return url
 
     def get_entity(self, request: EntityKeyQuery) -> RawRecord | None:
-        raise QueryError("AdminService entity lookup is not implemented")
+        if request.surface is not AdminServiceSurface.WMI:
+            raise QueryError("Only AdminService WMI entity requests are implemented")
+        if _WMI_CLASS.fullmatch(request.entity) is None:
+            raise ValueError("entity must be a valid WMI class name")
+        literal = self._serialize_key(request.key)
+        # Encode the complete literal before handing it to the URL builder. The
+        # structural quotes and parentheses remain readable; key data cannot
+        # become a path segment, query, or fragment.
+        path = quote(f"{request.entity}({literal})", safe="()'_-.")
+        params: dict[str, str] = {}
+        if request.options.select:
+            params["$select"] = ",".join(request.options.select)
+        if request.options.expand:
+            params["$expand"] = ",".join(request.options.expand)
+        try:
+            payload = self._admin.get_json(request.surface, path, params=params)
+        except _AdminServiceHTTPStatusError as error:
+            if error.status_code == 404:
+                return None
+            if 400 <= error.status_code < 500:
+                raise QueryError(
+                    "AdminService WMI entity request failed with HTTP "
+                    f"{error.status_code}"
+                ) from error
+            raise
+        except _AdminServiceResponseError as error:
+            raise QueryError(
+                "AdminService WMI entity request returned a malformed response"
+            ) from error
+        return self._parse_entity(payload)
+
+    @staticmethod
+    def _serialize_key(key: bool | int | float | str) -> str:
+        if isinstance(key, bool):
+            return "true" if key else "false"
+        if isinstance(key, int):
+            return str(key)
+        if isinstance(key, float):
+            if not math.isfinite(key):
+                raise ValueError("entity key float must be finite")
+            return repr(key)
+        escaped = key.replace("'", "''")
+        return f"'{escaped}'"
+
+    @staticmethod
+    def _parse_entity(payload: object) -> RawRecord:
+        if not isinstance(payload, Mapping):
+            raise QueryError(
+                "AdminService WMI entity request returned a malformed object"
+            )
+        record = cast("Mapping[object, object]", payload)
+        if not all(isinstance(key, str) for key in record):
+            raise QueryError(
+                "AdminService WMI entity request returned a malformed object"
+            )
+        return cast("RawRecord", record)
 
     def invoke_method(self, request: ProviderMethodCall) -> RawMethodResult:
         raise MethodInvocationError("AdminService method invocation is not implemented")

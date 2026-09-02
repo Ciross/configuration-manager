@@ -258,6 +258,15 @@ semantic validation to the server. Class-name casing is preserved because
 Microsoft documents it as significant, despite release-specific relaxation for
 the WMI route.
 
+The implemented `raw.wmi.query` operation uses the collection route, while
+`raw.wmi.get` uses the canonical parenthesized single-key route and performs one
+request. Keys follow OData primitive-literal syntax; string literals double
+embedded quotes and are URI-encoded so their contents cannot escape the WMI
+path. Only scalar keys are represented, not composite keys. A keyed HTTP 404
+maps to `None`: this means the entity was not returned to the current identity
+and may reflect a missing key, unavailable class, or ConfigMgr provider/RBAC
+invisibility rather than proving global nonexistence.
+
 ### Raw values
 
 Conceptually:

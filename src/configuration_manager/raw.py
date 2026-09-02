@@ -9,7 +9,9 @@ from typing import TYPE_CHECKING, cast
 from .pagination import Page
 from .transport import (
     AdminServiceSurface,
+    EntityKeyQuery,
     EntityQuery,
+    JsonNonNullScalar,
     ODataQueryOptions,
     RawRecord,
     _Continuation,
@@ -20,7 +22,7 @@ if TYPE_CHECKING:
 
 
 class RawWmi:
-    """Read-only AdminService ``/wmi`` collection queries."""
+    """Read-only AdminService ``/wmi`` queries."""
 
     __slots__ = ("_client",)
 
@@ -43,6 +45,25 @@ class RawWmi:
                 AdminServiceSurface.WMI,
                 entity,
                 ODataQueryOptions(filter, select, expand, order_by, top),
+            )
+        )
+
+    def get(
+        self,
+        entity: str,
+        key: JsonNonNullScalar,
+        *,
+        select: tuple[str, ...] = (),
+        expand: tuple[str, ...] = (),
+    ) -> RawRecord | None:
+        """Return one keyed WMI entity, or ``None`` when it is not visible."""
+        transport = self._client._provider_transport()
+        return transport.get_entity(
+            EntityKeyQuery(
+                surface=AdminServiceSurface.WMI,
+                entity=entity,
+                key=key,
+                options=ODataQueryOptions(select=select, expand=expand),
             )
         )
 

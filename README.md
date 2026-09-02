@@ -77,6 +77,19 @@ with ConfigManager(server="cm01.contoso.com") as client:
         print(record["ResourceId"], record["Name"])
 ```
 
+A parenthesized, single-scalar WMI key can be fetched with exactly one request:
+
+```python
+device = client.raw.wmi.get(
+    "SMS_R_System",
+    16777219,
+    select=("ResourceId", "Name"),
+)
+
+if device is not None:
+    print(device["Name"])
+```
+
 `raw.wmi` is the HTTPS/OData `/AdminService/wmi/` route, not direct WMI/DCOM.
 WMI class names are case-sensitive and are passed through using the caller's
 casing. Raw record property names are likewise returned exactly as AdminService
@@ -89,6 +102,14 @@ server-controlled page; call `next_page()` when `page.has_next`, or use the lazy
 client-selected page size. Built-in authentication has been validated on Windows
 with the logged-in user's current Windows identity; injected transports remain
 available cross-platform.
+
+`get()` uses the AdminService `/wmi` keyed route and returns `RawRecord | None`.
+HTTP 404 maps to `None`, meaning the keyed entity was not returned to the current
+identity—not proof that it does not exist globally. A missing key, unavailable
+class, or ConfigMgr provider/RBAC invisibility can all surface this way. Scalar
+`bool`, `int`, `float`, and string keys are supported; string OData literals are
+escaped and URI-safe. Composite WMI keys are not yet represented. As with query
+results, raw property casing remains defined by AdminService.
 
 The internal HTTP boundary uses stable `httpx2`, operating-system certificate
 trust, finite timeouts, bounded response decoding, and disabled redirects.
