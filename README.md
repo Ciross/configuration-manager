@@ -3,7 +3,7 @@
 > [!IMPORTANT]
 > This project is in **very early development**. It provides typed configuration,
 > lifecycle, and an internal AdminService HTTP/authentication foundation, but no
-> public Configuration Manager query or resource operations yet.
+> its first public, read-only Configuration Manager query surface.
 
 `configuration-manager` is intended to become a strongly typed Python SDK for
 Microsoft Configuration Manager (ConfigMgr, formerly SCCM and MECM). It will
@@ -61,12 +61,33 @@ with ConfigManager(server="cm01.contoso.com") as client:
     assert not client.closed
 ```
 
-No public query, resource, or raw AdminService operations are implemented yet.
+The first public operation queries AdminService's WMI provider surface:
+
+```python
+from configuration_manager import ConfigManager
+
+with ConfigManager(server="cm01.contoso.com") as client:
+    page = client.raw.wmi.query(
+        "SMS_R_System",
+        filter="Client eq 1",
+        select=("ResourceID", "Name"),
+        top=10,
+    )
+    for record in page.items:
+        print(record["ResourceID"], record["Name"])
+```
+
+`raw.wmi` is the HTTPS/OData `/AdminService/wmi/` route, not direct WMI/DCOM.
+WMI class names are case-sensitive. `query()` materializes exactly one
+server-controlled page; call `next_page()` when `page.has_next`, or use the lazy
+`iter()` helper to traverse continuations. `$top` is an OData result limit, not a
+client-selected page size. Built-in authentication has been validated on Windows
+with the logged-in user's current Windows identity; injected transports remain
+available cross-platform.
+
 The internal HTTP boundary uses stable `httpx2`, operating-system certificate
 trust, finite timeouts, bounded response decoding, and disabled redirects.
-Windows current-credential Negotiate support is present but still requires
-validation against a real ConfigMgr environment before it is wired into the
-public client.
+Windows current-credential Negotiate support is wired into the built-in client.
 
 The resulting foundational contract and its decision records are documented in
 the [architecture guide](docs/architecture.md).

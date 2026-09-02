@@ -129,6 +129,16 @@ class AdminService:
             ) from error
         return cast("JsonValue", value)
 
+    def _get_json_url(self, url: httpx2.URL) -> JsonValue:
+        """GET a provider-prevalidated URL without rebuilding its query string."""
+        content = self._get_url_bytes(url)
+        try:
+            return cast("JsonValue", json.loads(content))
+        except (json.JSONDecodeError, UnicodeDecodeError) as error:
+            raise _AdminServiceResponseError(
+                "AdminService returned malformed JSON"
+            ) from error
+
     def get_text(self, surface: AdminServiceSurface, path: str) -> str:
         """GET and decode bounded text, used by the opt-in metadata probe."""
         content = self._get_bytes(surface, path)
@@ -146,11 +156,13 @@ class AdminService:
         *,
         params: Mapping[str, str] | None = None,
     ) -> bytes:
+        return self._get_url_bytes(self.url(surface, path, params=params))
+
+    def _get_url_bytes(self, url: httpx2.URL) -> bytes:
+        """Execute one GET for an already constructed internal URL."""
         self._require_open()
         try:
-            with self._client.stream(
-                "GET", self.url(surface, path, params=params)
-            ) as response:
+            with self._client.stream("GET", url) as response:
                 self._raise_for_status(response.status_code)
                 content = bytearray()
                 for chunk in response.iter_bytes():
