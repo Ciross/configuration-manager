@@ -114,6 +114,25 @@ The WMI controller may place a keyed result inside an OData `value` envelope;
 the SDK unwraps that transport detail, so callers receive the same public result
 type whether AdminService returns an envelope or a bare entity object.
 
+### Raw versioned AdminService entities
+
+The distinct versioned route is available through `raw.v1`:
+
+```python
+with ConfigManager(server="cm01.contoso.com") as client:
+    page = client.raw.v1.query("Device", top=10)
+    device = client.raw.v1.get("Device", 16777219)
+```
+
+`raw.v1` maps to the HTTPS/OData `/AdminService/v1.0/` route, while `raw.wmi`
+maps to `/AdminService/wmi/`. Microsoft documents `Device` on the v1 route;
+entity availability can vary by Configuration Manager version and site, and v1
+does not imply that every SMS Provider class is available. Results remain raw
+mappings whose property names are preserved exactly as AdminService sends them.
+Collection pagination follows the server's opaque `@odata.nextLink`. A keyed
+404 returns `None` (not found or not visible to the current identity), and
+ConfigMgr RBAC remains authoritative for both routes.
+
 The internal HTTP boundary uses stable `httpx2`, operating-system certificate
 trust, finite timeouts, bounded response decoding, and disabled redirects.
 Windows current-credential Negotiate support is wired into the built-in client.

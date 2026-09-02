@@ -258,9 +258,13 @@ semantic validation to the server. Class-name casing is preserved because
 Microsoft documents it as significant, despite release-specific relaxation for
 the WMI route.
 
-The implemented `raw.wmi.query` operation uses the collection route, while
-`raw.wmi.get` uses the canonical parenthesized single-key route and performs one
-request. Keys follow OData primitive-literal syntax; string literals double
+The implemented `raw.wmi` and `raw.v1` namespaces expose the same read-only
+`query`, `get`, `next_page`, and `iter` mechanics over their distinct routes:
+`raw.wmi` maps to `/AdminService/wmi`, and `raw.v1` maps to
+`/AdminService/v1.0`. Both reuse `EntityQuery` / `EntityKeyQuery` and the same
+`ProviderTransport`. Their `get` methods use the canonical parenthesized
+single-key route and perform one request. Keys share the OData primitive-literal
+serializer; string literals double
 embedded quotes and are URI-encoded so their contents cannot escape the WMI
 path. Only scalar keys are represented, not composite keys. A keyed HTTP 404
 maps to `None`: this means the entity was not returned to the current identity
@@ -602,14 +606,16 @@ Windows and non-Windows clients before implementation promises are made:
   `/AdminService/wmi/` remain distinct, first-class raw namespaces.
 - `raw.wmi` is the AdminService WMI route over HTTPS/OData, never an implication
   of direct WMI/DCOM connectivity.
-- The WMI route is the first executable provider surface. Collection queries
-  parse only the OData `value` envelope into raw records. Pagination exists only
-  when the server supplies `@odata.nextLink`; links remain opaque and are
-  validated as HTTPS, same-origin, and within `/AdminService/wmi/` before
-  credentialed replay.
-- Raw WMI class-name casing is caller-controlled, while returned property names
-  preserve AdminService JSON casing verbatim; the raw layer does not normalize
-  differences from SMS Provider/WMI reference capitalization. Successful
+- Both raw routes are executable through the same provider transport. Collection
+  queries parse only the OData `value` envelope into raw records. Pagination
+  exists only when the server supplies `@odata.nextLink`; links remain opaque
+  and are origin-bound and surface-bound before credentialed replay. A WMI
+  continuation stays within `/AdminService/wmi/`, and a v1 continuation stays
+  within `/AdminService/v1.0/`.
+- Raw entity-name casing is caller-controlled, while returned property names
+  preserve service-defined AdminService JSON casing verbatim; the raw layer does
+  not normalize differences from reference capitalization. Live validation uses
+  `SMS_R_System` for WMI and `Device` for v1. Successful
   Windows authentication does not imply WMI-query authorization, because
   ConfigMgr RBAC remains independently authoritative.
 - Built-in operations on Windows authenticate as the current logged-in Windows

@@ -32,17 +32,18 @@ from .transport import (
     _Continuation,
 )
 
-_WMI_CLASS = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z", re.ASCII)
+_ENTITY_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z", re.ASCII)
 
 
 @dataclass(frozen=True, slots=True)
 class _AdminServiceContinuation:
     owner: object
+    surface: AdminServiceSurface
     url: httpx2.URL
 
 
 class _AdminServiceProviderTransport:
-    """Translate WMI collection and keyed requests to AdminService HTTP."""
+    """Translate entity collection and keyed requests to AdminService HTTP."""
 
     __slots__ = ("_admin", "_owner")
 
@@ -51,8 +52,7 @@ class _AdminServiceProviderTransport:
         self._owner = object()
 
     def query_entities(self, request: EntityQuery) -> RawPage:
-        if request.surface is not AdminServiceSurface.WMI:
-            raise QueryError("Only AdminService WMI queries are implemented")
+        description = self._surface_description(request.surface)
         try:
             if request.continuation is not None:
                 state = request.continuation._value
@@ -61,10 +61,11 @@ class _AdminServiceProviderTransport:
                     or state.owner is not self._owner
                 ):
                     raise ValueError("page continuation belongs to another transport")
+                if state.surface is not request.surface:
+                    raise ValueError("page continuation belongs to another surface")
                 payload = self._admin._get_json_url(state.url)
             else:
-                if _WMI_CLASS.fullmatch(request.entity) is None:
-                    raise ValueError("entity must be a valid WMI class name")
+                self._validate_entity_name(request.entity)
                 options = request.options
                 params: dict[str, str] = {}
                 if options.filter is not None:
@@ -83,68 +84,80 @@ class _AdminServiceProviderTransport:
         except _AdminServiceHTTPStatusError as error:
             if 400 <= error.status_code < 500:
                 raise QueryError(
-                    f"AdminService WMI query failed with HTTP {error.status_code}"
+                    f"AdminService {description} query failed with HTTP "
+                    f"{error.status_code}"
                 ) from error
             raise
         except _AdminServiceResponseError as error:
             raise QueryError(
-                "AdminService WMI query returned a malformed response"
+                f"AdminService {description} query returned a malformed response"
             ) from error
-        return self._parse_page(payload)
+        return self._parse_page(payload, request.surface)
 
-    def _parse_page(self, payload: object) -> RawPage:
+    def _parse_page(self, payload: object, surface: AdminServiceSurface) -> RawPage:
+        description = self._surface_description(surface)
         if not isinstance(payload, Mapping) or "value" not in payload:
-            raise QueryError("AdminService WMI query returned a malformed collection")
+            raise QueryError(
+                f"AdminService {description} query returned a malformed collection"
+            )
         envelope = cast("Mapping[object, object]", payload)
         values = envelope["value"]
         if not isinstance(values, list):
-            raise QueryError("AdminService WMI query returned a malformed collection")
+            raise QueryError(
+                f"AdminService {description} query returned a malformed collection"
+            )
         records: list[RawRecord] = []
         for value in cast("list[object]", values):
             if not isinstance(value, Mapping):
                 raise QueryError(
-                    "AdminService WMI query returned a malformed collection"
+                    f"AdminService {description} query returned a malformed collection"
                 )
             record = cast("Mapping[object, object]", value)
             if not all(isinstance(key, str) for key in record):
                 raise QueryError(
-                    "AdminService WMI query returned a malformed collection"
+                    f"AdminService {description} query returned a malformed collection"
                 )
             records.append(cast("RawRecord", record))
         next_link = envelope.get("@odata.nextLink")
         if next_link is None:
             return Page(records)
         if not isinstance(next_link, str) or not next_link:
-            raise QueryError("AdminService WMI query returned an invalid continuation")
-        url = self._validate_continuation(next_link)
+            raise QueryError(
+                f"AdminService {description} query returned an invalid continuation"
+            )
+        url = self._validate_continuation(next_link, surface)
         return Page[RawRecord]._from_transport(
-            records, _Continuation(_AdminServiceContinuation(self._owner, url))
+            records,
+            _Continuation(_AdminServiceContinuation(self._owner, surface, url)),
         )
 
-    def _validate_continuation(self, link: str) -> httpx2.URL:
+    def _validate_continuation(
+        self, link: str, surface: AdminServiceSurface
+    ) -> httpx2.URL:
+        description = self._surface_description(surface)
         try:
-            url = self._admin.url(AdminServiceSurface.WMI).join(link)
+            url = self._admin.url(surface).join(link)
         except Exception as error:
             raise QueryError(
-                "AdminService WMI query returned an invalid continuation"
+                f"AdminService {description} query returned an invalid continuation"
             ) from error
-        origin = self._admin.url(AdminServiceSurface.WMI)
+        origin = self._admin.url(surface)
         if (
             url.scheme != "https"
             or url.origin != origin.origin
             or bool(url.username)
             or bool(url.password)
             or url.fragment
-            or not url.path.startswith("/AdminService/wmi/")
+            or not url.path.startswith(f"/AdminService/{surface.value}/")
         ):
-            raise QueryError("AdminService WMI query returned an unsafe continuation")
+            raise QueryError(
+                f"AdminService {description} query returned an unsafe continuation"
+            )
         return url
 
     def get_entity(self, request: EntityKeyQuery) -> RawRecord | None:
-        if request.surface is not AdminServiceSurface.WMI:
-            raise QueryError("Only AdminService WMI entity requests are implemented")
-        if _WMI_CLASS.fullmatch(request.entity) is None:
-            raise ValueError("entity must be a valid WMI class name")
+        description = self._surface_description(request.surface)
+        self._validate_entity_name(request.entity)
         literal = self._serialize_key(request.key)
         # Encode the complete literal before handing it to the URL builder. The
         # structural quotes and parentheses remain readable; key data cannot
@@ -162,15 +175,25 @@ class _AdminServiceProviderTransport:
                 return None
             if 400 <= error.status_code < 500:
                 raise QueryError(
-                    "AdminService WMI entity request failed with HTTP "
+                    f"AdminService {description} entity request failed with HTTP "
                     f"{error.status_code}"
                 ) from error
             raise
         except _AdminServiceResponseError as error:
             raise QueryError(
-                "AdminService WMI entity request returned a malformed response"
+                f"AdminService {description} entity request returned a malformed "
+                "response"
             ) from error
-        return self._parse_keyed_entity_response(payload)
+        return self._parse_keyed_entity_response(payload, request.surface)
+
+    @staticmethod
+    def _surface_description(surface: AdminServiceSurface) -> str:
+        return "WMI" if surface is AdminServiceSurface.WMI else "v1"
+
+    @staticmethod
+    def _validate_entity_name(entity: str) -> None:
+        if _ENTITY_NAME.fullmatch(entity) is None:
+            raise ValueError("entity must be a valid AdminService entity name")
 
     @staticmethod
     def _serialize_key(key: bool | int | float | str) -> str:
@@ -186,36 +209,36 @@ class _AdminServiceProviderTransport:
         return f"'{escaped}'"
 
     @staticmethod
-    def _parse_keyed_entity_response(payload: object) -> RawRecord | None:
+    def _parse_keyed_entity_response(
+        payload: object, surface: AdminServiceSurface = AdminServiceSurface.WMI
+    ) -> RawRecord | None:
+        description = _AdminServiceProviderTransport._surface_description(surface)
+        malformed_envelope = (
+            f"AdminService {description} entity request returned a malformed envelope"
+        )
         if not isinstance(payload, Mapping):
             raise QueryError(
-                "AdminService WMI entity request returned a malformed object"
+                f"AdminService {description} entity request returned a malformed object"
             )
         root = cast("Mapping[object, object]", payload)
         if "@odata.context" in root and "value" in root:
             values = root["value"]
             if not isinstance(values, list):
-                raise QueryError(
-                    "AdminService WMI entity request returned a malformed envelope"
-                )
+                raise QueryError(malformed_envelope)
             records = cast("list[object]", values)
             if len(records) > 1:
-                raise QueryError(
-                    "AdminService WMI entity request returned a malformed envelope"
-                )
+                raise QueryError(malformed_envelope)
             if not records:
                 return None
             record_value = records[0]
             if not isinstance(record_value, Mapping):
-                raise QueryError(
-                    "AdminService WMI entity request returned a malformed envelope"
-                )
+                raise QueryError(malformed_envelope)
             record = cast("Mapping[object, object]", record_value)
         else:
             record = root
         if not all(isinstance(key, str) for key in record):
             raise QueryError(
-                "AdminService WMI entity request returned a malformed object"
+                f"AdminService {description} entity request returned a malformed object"
             )
         return cast("RawRecord", record)
 

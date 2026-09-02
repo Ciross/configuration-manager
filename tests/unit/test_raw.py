@@ -102,6 +102,54 @@ def test_iterator_is_lazy() -> None:
     assert len(transport.requests) == 1
 
 
+def test_v1_query_builds_typed_request_and_preserves_records() -> None:
+    transport = FakeTransport()
+    client = ConfigManager(transport=transport)
+    v1 = client.raw.v1
+    page = v1.query(
+        "Device",
+        filter="Name eq 'PC001'",
+        select=("ResourceId", "Name"),
+        top=1,
+    )
+    assert page.items == ({"Name": "PC"},)
+    assert transport.requests == [
+        EntityQuery(
+            surface=AdminServiceSurface.V1,
+            entity="Device",
+            options=transport.requests[0].options,
+        )
+    ]
+    assert transport.requests[0].options.filter == "Name eq 'PC001'"
+    assert transport.requests[0].options.select == ("ResourceId", "Name")
+    assert transport.requests[0].options.top == 1
+    client.close()
+    with pytest.raises(LifecycleError):
+        v1.query("Device")
+
+
+@pytest.mark.parametrize("result", [None, {"Name": "PC001"}])
+def test_v1_get_builds_typed_request_and_preserves_result(
+    result: RawRecord | None,
+) -> None:
+    transport = FakeTransport(result)
+    client = ConfigManager(transport=transport)
+    assert client.raw.v1.get("Device", 123) is result
+    assert transport.entity_requests == [
+        EntityKeyQuery(AdminServiceSurface.V1, "Device", 123)
+    ]
+    assert transport.requests == []
+
+
+def test_v1_iterator_is_lazy_and_constructs_no_wmi_request() -> None:
+    transport = FakeTransport()
+    iterator = ConfigManager(transport=transport).raw.v1.iter("Device")
+    assert transport.requests == []
+    assert next(iterator)["Name"] == "PC"
+    assert len(transport.requests) == 1
+    assert transport.requests[0].surface is AdminServiceSurface.V1
+
+
 def test_builtin_transport_is_locally_constructed_owned_and_closed() -> None:
     client = ConfigManager(server="does-not-resolve.invalid")
     wmi = client.raw.wmi
