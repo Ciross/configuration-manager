@@ -5,7 +5,7 @@
 
 import ssl
 
-import httpx
+import httpx2
 import pytest
 
 from configuration_manager import (
@@ -26,14 +26,14 @@ from configuration_manager.adminservice import (
 from configuration_manager.transport import AdminServiceSurface
 
 
-def service(handler: httpx.MockTransport) -> AdminService:
+def service(handler: httpx2.MockTransport) -> AdminService:
     """Build a verified-configuration service over a controlled transport."""
     return AdminService("cm01.contoso.com", transport=handler)
 
 
 @pytest.mark.integration
 def test_urls_and_query_encoding_are_deterministic() -> None:
-    admin = service(httpx.MockTransport(lambda _request: httpx.Response(200)))
+    admin = service(httpx2.MockTransport(lambda _request: httpx2.Response(200)))
     assert str(admin.url(AdminServiceSurface.V1)) == (
         "https://cm01.contoso.com/AdminService/v1.0/"
     )
@@ -59,15 +59,15 @@ def test_system_tls_context_verifies_certificates_and_hostnames() -> None:
 
 @pytest.mark.integration
 def test_redirects_are_not_followed() -> None:
-    requests: list[httpx.Request] = []
+    requests: list[httpx2.Request] = []
 
-    def redirect(request: httpx.Request) -> httpx.Response:
+    def redirect(request: httpx2.Request) -> httpx2.Response:
         requests.append(request)
-        return httpx.Response(
+        return httpx2.Response(
             302, headers={"location": "https://evil.example/private-target"}
         )
 
-    admin = service(httpx.MockTransport(redirect))
+    admin = service(httpx2.MockTransport(redirect))
     with pytest.raises(_AdminServiceHTTPStatusError, match="HTTP 302") as caught:
         admin.get_json(
             AdminServiceSurface.V1,
@@ -93,7 +93,7 @@ def test_redirects_are_not_followed() -> None:
 )
 def test_status_translation(status: int, error: type[Exception]) -> None:
     admin = service(
-        httpx.MockTransport(lambda _request: httpx.Response(status, text="secret"))
+        httpx2.MockTransport(lambda _request: httpx2.Response(status, text="secret"))
     )
     with pytest.raises(error) as caught:
         admin.get_json(
@@ -107,18 +107,18 @@ def test_status_translation(status: int, error: type[Exception]) -> None:
 @pytest.mark.parametrize(
     ("failure", "translated"),
     [
-        (httpx.ConnectError("internal details"), TransportConnectionError),
-        (httpx.ReadTimeout("internal details"), TransportTimeoutError),
+        (httpx2.ConnectError("internal details"), TransportConnectionError),
+        (httpx2.ReadTimeout("internal details"), TransportTimeoutError),
     ],
 )
 def test_transport_failure_translation(
-    failure: httpx.HTTPError, translated: type[Exception]
+    failure: httpx2.HTTPError, translated: type[Exception]
 ) -> None:
-    def fail(request: httpx.Request) -> httpx.Response:
+    def fail(request: httpx2.Request) -> httpx2.Response:
         failure.request = request
         raise failure
 
-    admin = service(httpx.MockTransport(fail))
+    admin = service(httpx2.MockTransport(fail))
     with pytest.raises(translated) as caught:
         admin.get_json(AdminServiceSurface.WMI, "Anything")
     assert caught.value.__cause__ is failure
@@ -128,14 +128,14 @@ def test_transport_failure_translation(
 @pytest.mark.integration
 def test_certificate_failure_translation() -> None:
     certificate_error = ssl.SSLCertVerificationError("certificate details")
-    failure = httpx.ConnectError("connect details")
+    failure = httpx2.ConnectError("connect details")
     failure.__cause__ = certificate_error
 
-    def fail(request: httpx.Request) -> httpx.Response:
+    def fail(request: httpx2.Request) -> httpx2.Response:
         failure.request = request
         raise failure
 
-    admin = service(httpx.MockTransport(fail))
+    admin = service(httpx2.MockTransport(fail))
     with pytest.raises(TLSVerificationError) as caught:
         admin.get_json(AdminServiceSurface.V1, "Anything")
     assert caught.value.__cause__ is failure
@@ -144,7 +144,7 @@ def test_certificate_failure_translation() -> None:
 @pytest.mark.integration
 def test_json_decoding_size_guard_and_idempotent_cleanup() -> None:
     malformed = service(
-        httpx.MockTransport(lambda _request: httpx.Response(200, content=b"{"))
+        httpx2.MockTransport(lambda _request: httpx2.Response(200, content=b"{"))
     )
     with pytest.raises(_AdminServiceResponseError) as caught:
         malformed.get_json(AdminServiceSurface.V1, "Anything")
@@ -154,8 +154,8 @@ def test_json_decoding_size_guard_and_idempotent_cleanup() -> None:
     assert malformed.closed
 
     oversized = service(
-        httpx.MockTransport(
-            lambda _request: httpx.Response(200, content=b"x" * (10 * 1024 * 1024 + 1))
+        httpx2.MockTransport(
+            lambda _request: httpx2.Response(200, content=b"x" * (10 * 1024 * 1024 + 1))
         )
     )
     with pytest.raises(_AdminServiceResponseError, match="safety limit"):
@@ -163,12 +163,22 @@ def test_json_decoding_size_guard_and_idempotent_cleanup() -> None:
 
 
 @pytest.mark.integration
+def test_invalid_utf8_text_is_rejected() -> None:
+    admin = service(
+        httpx2.MockTransport(lambda _request: httpx2.Response(200, content=b"\xff"))
+    )
+    with pytest.raises(_AdminServiceResponseError, match="invalid UTF-8") as caught:
+        admin.get_text(AdminServiceSurface.V1, "$metadata")
+    assert isinstance(caught.value.__cause__, UnicodeDecodeError)
+
+
+@pytest.mark.integration
 @pytest.mark.parametrize("operation", ["json", "text"])
 def test_requests_after_close_raise_lifecycle_error(operation: str) -> None:
-    requests: list[httpx.Request] = []
+    requests: list[httpx2.Request] = []
     admin = service(
-        httpx.MockTransport(
-            lambda request: (requests.append(request), httpx.Response(200))[1]
+        httpx2.MockTransport(
+            lambda request: (requests.append(request), httpx2.Response(200))[1]
         )
     )
     admin.close()
@@ -184,10 +194,10 @@ def test_requests_after_close_raise_lifecycle_error(operation: str) -> None:
 
 @pytest.mark.integration
 def test_construction_sends_no_request() -> None:
-    requests: list[httpx.Request] = []
+    requests: list[httpx2.Request] = []
     admin = service(
-        httpx.MockTransport(
-            lambda request: (requests.append(request), httpx.Response(200))[1]
+        httpx2.MockTransport(
+            lambda request: (requests.append(request), httpx2.Response(200))[1]
         )
     )
     assert requests == []
