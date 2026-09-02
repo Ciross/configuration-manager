@@ -589,6 +589,19 @@ Windows and non-Windows clients before implementation promises are made:
   `/AdminService/wmi/` remain distinct, first-class raw namespaces.
 - `raw.wmi` is the AdminService WMI route over HTTPS/OData, never an implication
   of direct WMI/DCOM connectivity.
+- The WMI route is the first executable provider surface. Collection queries
+  parse only the OData `value` envelope into raw records. Pagination exists only
+  when the server supplies `@odata.nextLink`; links remain opaque and are
+  validated as HTTPS, same-origin, and within `/AdminService/wmi/` before
+  credentialed replay.
+- Raw WMI class-name casing is caller-controlled, while returned property names
+  preserve AdminService JSON casing verbatim; the raw layer does not normalize
+  differences from SMS Provider/WMI reference capitalization. Successful
+  Windows authentication does not imply WMI-query authorization, because
+  ConfigMgr RBAC remains independently authoritative.
+- Built-in operations on Windows authenticate as the current logged-in Windows
+  identity. Injected provider transports remain the cross-platform extension
+  point.
 - Raw AdminService access may return typed JSON-compatible values but never
   arbitrary cross-origin URL responses.
 - Pagination is explicit: `list()` fetches one page and `iter()` visibly opts
