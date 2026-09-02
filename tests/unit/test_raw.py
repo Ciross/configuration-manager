@@ -1,8 +1,12 @@
 """Unit coverage for the public raw provider facade."""
 
+# Internal state is inspected narrowly to verify built-in ownership.
+# pyright: reportPrivateUsage=false
+
 import pytest
 
 from configuration_manager import ConfigManager, LifecycleError, Page
+from configuration_manager.adminservice_transport import _AdminServiceProviderTransport
 from configuration_manager.transport import (
     AdminServiceSurface,
     EntityKeyQuery,
@@ -65,3 +69,26 @@ def test_iterator_is_lazy() -> None:
     assert transport.requests == []
     assert next(iterator)["Name"] == "PC"
     assert len(transport.requests) == 1
+
+
+def test_builtin_transport_is_locally_constructed_owned_and_closed() -> None:
+    client = ConfigManager(server="does-not-resolve.invalid")
+    wmi = client.raw.wmi
+    transport = client._transport
+    assert isinstance(transport, _AdminServiceProviderTransport)
+    assert client._own_transport is True
+    assert not transport._admin.closed
+
+    client.close()
+    client.close()
+    assert transport._admin.closed
+    with pytest.raises(LifecycleError):
+        wmi.query("SMS_R_System")
+
+
+def test_builtin_context_closes_internal_stack() -> None:
+    with ConfigManager(server="does-not-resolve.invalid") as client:
+        transport = client._transport
+        assert isinstance(transport, _AdminServiceProviderTransport)
+        assert not transport._admin.closed
+    assert transport._admin.closed

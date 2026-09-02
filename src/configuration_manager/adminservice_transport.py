@@ -129,8 +129,7 @@ class _AdminServiceProviderTransport:
         origin = self._admin.url(AdminServiceSurface.WMI)
         if (
             url.scheme != "https"
-            or url.host != origin.host
-            or url.port != origin.port
+            or url.origin != origin.origin
             or bool(url.username)
             or bool(url.password)
             or url.fragment

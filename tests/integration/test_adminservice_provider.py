@@ -5,7 +5,13 @@
 import httpx2
 import pytest
 
-from configuration_manager import ConfigManager, QueryError
+from configuration_manager import (
+    AuthenticationError,
+    AuthorizationError,
+    ConfigManager,
+    QueryError,
+    ServerError,
+)
 from configuration_manager.adminservice import AdminService
 from configuration_manager.adminservice_transport import _AdminServiceProviderTransport
 
@@ -70,6 +76,7 @@ def test_malformed_envelopes_are_query_errors(body: object) -> None:
     [
         "http://cm01.contoso.com/AdminService/wmi/X?$skiptoken=x",
         "https://evil.example/AdminService/wmi/X?$skiptoken=x",
+        "https://cm01.contoso.com:8443/AdminService/wmi/X?$skiptoken=x",
         "https://cm01.contoso.com/AdminService/v1.0/X?$skiptoken=x",
         "https://user:pass@cm01.contoso.com/AdminService/wmi/X",
     ],
@@ -115,6 +122,76 @@ def test_continuation_is_followed_exactly_once_and_bound_to_transport() -> None:
     assert page.items[0]["Page"] == 2
     assert len(requests) == 2
     assert requests[1].url.query == b"$skiptoken=A%2FB%3D"
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    "link",
+    [
+        "https://cm01.contoso.com/AdminService/wmi/SMS_R_System?$skiptoken=A%2FB%3D",
+        "https://cm01.contoso.com:443/AdminService/wmi/SMS_R_System?$skiptoken=A%2FB%3D",
+    ],
+)
+def test_absolute_effective_origin_continuations_are_replayed_opaquely(
+    link: str,
+) -> None:
+    requests: list[httpx2.Request] = []
+
+    def respond(request: httpx2.Request) -> httpx2.Response:
+        requests.append(request)
+        if len(requests) == 1:
+            return httpx2.Response(200, json={"value": [], "@odata.nextLink": link})
+        return httpx2.Response(200, json={"value": []})
+
+    client = client_with(httpx2.MockTransport(respond))
+    first = client.raw.wmi.query(
+        "SMS_R_System", filter="Client eq 1", select=("Name",), top=10
+    )
+    client.raw.wmi.next_page(first)
+    assert len(requests) == 2
+    assert requests[1].url.query == b"$skiptoken=A%2FB%3D"
+    assert "$filter" not in requests[1].url.params
+    assert "$select" not in requests[1].url.params
+    assert "$top" not in requests[1].url.params
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("status", [400, 404])
+def test_query_client_statuses_become_safe_query_errors(status: int) -> None:
+    client = client_with(
+        httpx2.MockTransport(
+            lambda _request: httpx2.Response(status, text="secret response body")
+        )
+    )
+    with pytest.raises(
+        QueryError, match=rf"WMI query failed with HTTP {status}"
+    ) as caught:
+        client.raw.wmi.query("SMS_R_System", filter="Password eq 'secret-filter'")
+    message = str(caught.value)
+    assert "secret response body" not in message
+    assert "secret-filter" not in message
+    assert "https://" not in message
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    ("status", "error"),
+    [(401, AuthenticationError), (403, AuthorizationError), (500, ServerError)],
+)
+def test_query_preserves_stable_executor_status_errors(
+    status: int, error: type[Exception]
+) -> None:
+    client = client_with(
+        httpx2.MockTransport(
+            lambda _request: httpx2.Response(status, text="secret response body")
+        )
+    )
+    with pytest.raises(error) as caught:
+        client.raw.wmi.query("SMS_R_System", filter="Secret eq 1")
+    message = str(caught.value)
+    assert "secret response body" not in message
+    assert "Secret eq 1" not in message
+    assert "https://" not in message
 
 
 @pytest.mark.integration

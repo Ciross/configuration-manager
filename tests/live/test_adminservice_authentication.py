@@ -1,6 +1,6 @@
 """Opt-in validation against a real Configuration Manager lab."""
 
-# Private boundary usage is deliberate until a public raw API exists.
+# Private boundary usage is deliberate for the low-level metadata probe.
 # pyright: reportPrivateUsage=false
 
 import os

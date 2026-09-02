@@ -68,8 +68,9 @@ def _is_certificate_failure(error: BaseException) -> bool:
 class AdminService:
     """Execute bounded AdminService HTTP requests without domain semantics.
 
-    This class is internal while the raw/resource contracts remain unimplemented.
-    Construction creates local objects only and never sends a request.
+    This executor remains internal behind the provider transport; only read-only
+    raw WMI collection queries are public. Construction creates local objects
+    only and never sends a request.
     """
 
     __slots__ = ("_client", "_closed", "_origin")
