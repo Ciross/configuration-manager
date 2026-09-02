@@ -40,9 +40,9 @@ def test_public_wmi_query() -> None:
         pytest.skip("CONFIGURATION_MANAGER_LIVE_SERVER is not configured")
     with ConfigManager(server=server) as client:
         page = client.raw.wmi.query(
-            "SMS_R_System", select=("ResourceID", "Name"), top=1
+            "SMS_R_System", select=("ResourceId", "Name"), top=1
         )
     assert len(page.items) <= 1
     for record in page.items:
-        assert "ResourceID" in record
+        assert "ResourceId" in record
         assert "Name" in record

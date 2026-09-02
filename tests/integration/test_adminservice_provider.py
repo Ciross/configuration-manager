@@ -58,6 +58,23 @@ def test_query_serializes_options_once_and_parses_envelope() -> None:
 
 
 @pytest.mark.integration
+def test_raw_record_preserves_adminservice_property_casing() -> None:
+    client = client_with(
+        httpx2.MockTransport(
+            lambda _request: httpx2.Response(
+                200, json={"value": [{"ResourceId": 123, "Name": "PC001"}]}
+            )
+        )
+    )
+
+    page = client.raw.wmi.query("SMS_R_System", select=("ResourceId", "Name"), top=1)
+
+    assert page.items == ({"ResourceId": 123, "Name": "PC001"},)
+    assert "ResourceId" in page.items[0]
+    assert "ResourceID" not in page.items[0]
+
+
+@pytest.mark.integration
 @pytest.mark.parametrize(
     "body",
     [[], {}, {"value": {}}, {"value": [1]}, {"value": [], "@odata.nextLink": ""}],

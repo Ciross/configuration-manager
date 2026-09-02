@@ -70,15 +70,20 @@ with ConfigManager(server="cm01.contoso.com") as client:
     page = client.raw.wmi.query(
         "SMS_R_System",
         filter="Client eq 1",
-        select=("ResourceID", "Name"),
+        select=("ResourceId", "Name"),
         top=10,
     )
     for record in page.items:
-        print(record["ResourceID"], record["Name"])
+        print(record["ResourceId"], record["Name"])
 ```
 
 `raw.wmi` is the HTTPS/OData `/AdminService/wmi/` route, not direct WMI/DCOM.
-WMI class names are case-sensitive. `query()` materializes exactly one
+WMI class names are case-sensitive and are passed through using the caller's
+casing. Raw record property names are likewise returned exactly as AdminService
+serialized them; AdminService JSON casing can differ from capitalization in SMS
+Provider/WMI reference documentation, and the raw layer does not normalize it.
+Successful Windows authentication does not itself grant WMI query access:
+ConfigMgr RBAC still applies independently. `query()` materializes exactly one
 server-controlled page; call `next_page()` when `page.has_next`, or use the lazy
 `iter()` helper to traverse continuations. `$top` is an OData result limit, not a
 client-selected page size. Built-in authentication has been validated on Windows
