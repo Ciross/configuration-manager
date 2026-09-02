@@ -19,8 +19,10 @@ from configuration_manager.transport import (
 
 
 class FakeTransport:
-    def __init__(self) -> None:
+    def __init__(self, entity_result: RawRecord | None = None) -> None:
         self.requests: list[EntityQuery] = []
+        self.entity_requests: list[EntityKeyQuery] = []
+        self.entity_result = entity_result
         self.closed = 0
 
     def query_entities(self, request: EntityQuery) -> RawPage:
@@ -28,7 +30,8 @@ class FakeTransport:
         return Page(({"Name": "PC"},))
 
     def get_entity(self, request: EntityKeyQuery) -> RawRecord | None:
-        raise AssertionError("not used")
+        self.entity_requests.append(request)
+        return self.entity_result
 
     def invoke_method(self, request: ProviderMethodCall) -> RawMethodResult:
         raise AssertionError("not used")
@@ -61,6 +64,34 @@ def test_owned_injected_transport_closes_once() -> None:
     client.close()
     client.close()
     assert transport.closed == 1
+
+
+@pytest.mark.parametrize("result", [None, {"Name": "PC001"}])
+def test_get_builds_typed_request_and_preserves_result(
+    result: RawRecord | None,
+) -> None:
+    transport = FakeTransport(result)
+    client = ConfigManager(transport=transport)
+    wmi = client.raw.wmi
+
+    assert (
+        wmi.get(
+            "SMS_R_System", 123, select=("ResourceId", "Name"), expand=("Resource",)
+        )
+        is result
+    )
+    request = transport.entity_requests[0]
+    assert request.surface is AdminServiceSurface.WMI
+    assert request.entity == "SMS_R_System"
+    assert request.key == 123
+    assert request.options.select == ("ResourceId", "Name")
+    assert request.options.expand == ("Resource",)
+    assert transport.requests == []
+
+    client.close()
+    with pytest.raises(LifecycleError):
+        wmi.get("SMS_R_System", 1)
+    assert len(transport.entity_requests) == 1
 
 
 def test_iterator_is_lazy() -> None:

@@ -46,3 +46,27 @@ def test_public_wmi_query() -> None:
     for record in page.items:
         assert "ResourceId" in record
         assert "Name" in record
+
+
+@pytest.mark.live
+def test_public_wmi_get_visible_system() -> None:
+    """Fetch one visible system through the public keyed WMI API."""
+    if sys.platform != "win32":
+        pytest.skip("Integrated Authentication validation requires Windows")
+    server = os.environ.get("CONFIGURATION_MANAGER_LIVE_SERVER")
+    if not server:
+        pytest.skip("CONFIGURATION_MANAGER_LIVE_SERVER is not configured")
+    with ConfigManager(server=server) as client:
+        page = client.raw.wmi.query(
+            "SMS_R_System", select=("ResourceId", "Name"), top=1
+        )
+        if not page.items:
+            pytest.skip("the current identity has no visible systems")
+        resource_id = page.items[0]["ResourceId"]
+        assert isinstance(resource_id, int) and not isinstance(resource_id, bool)
+        fetched = client.raw.wmi.get(
+            "SMS_R_System", resource_id, select=("ResourceId", "Name")
+        )
+    assert fetched is not None
+    assert fetched["ResourceId"] == resource_id
+    assert "Name" in fetched
