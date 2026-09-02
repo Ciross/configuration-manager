@@ -284,11 +284,18 @@ def test_get_rejects_non_finite_float_without_request(key: float) -> None:
 
 
 @pytest.mark.integration
-def test_get_preserves_property_casing() -> None:
+def test_get_unwraps_live_wmi_envelope_and_preserves_property_casing() -> None:
     client = client_with(
         httpx2.MockTransport(
             lambda _request: httpx2.Response(
-                200, json={"ResourceId": 123, "Name": "PC001"}
+                200,
+                json={
+                    "@odata.context": (
+                        "https://cm01.contoso.com/AdminService/wmi/"
+                        "$metadata#SMS_R_System"
+                    ),
+                    "value": [{"ResourceId": 123, "Name": "PC001"}],
+                },
             )
         )
     )
@@ -296,6 +303,60 @@ def test_get_preserves_property_casing() -> None:
     assert record == {"ResourceId": 123, "Name": "PC001"}
     assert record is not None
     assert "ResourceID" not in record
+
+
+@pytest.mark.integration
+def test_get_accepts_bare_entity_object() -> None:
+    client = client_with(
+        httpx2.MockTransport(
+            lambda _request: httpx2.Response(
+                200, json={"ResourceId": 123, "Name": "PC001"}
+            )
+        )
+    )
+    assert client.raw.wmi.get("SMS_R_System", 123) == {
+        "ResourceId": 123,
+        "Name": "PC001",
+    }
+
+
+@pytest.mark.integration
+def test_get_does_not_unwrap_bare_entity_value_property() -> None:
+    client = client_with(
+        httpx2.MockTransport(
+            lambda _request: httpx2.Response(200, json={"value": "entity property"})
+        )
+    )
+    assert client.raw.wmi.get("SMS_R_System", 123) == {"value": "entity property"}
+
+
+@pytest.mark.integration
+def test_get_empty_wmi_envelope_returns_none() -> None:
+    client = client_with(
+        httpx2.MockTransport(
+            lambda _request: httpx2.Response(
+                200, json={"@odata.context": "metadata", "value": []}
+            )
+        )
+    )
+    assert client.raw.wmi.get("SMS_R_System", 123) is None
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    "value",
+    [None, {}, [1], [{"ResourceId": 1}, {"ResourceId": 2}]],
+)
+def test_get_rejects_malformed_wmi_envelopes(value: object) -> None:
+    client = client_with(
+        httpx2.MockTransport(
+            lambda _request: httpx2.Response(
+                200, json={"@odata.context": "metadata", "value": value}
+            )
+        )
+    )
+    with pytest.raises(QueryError, match="malformed"):
+        client.raw.wmi.get("SMS_R_System", 123)
 
 
 @pytest.mark.integration
@@ -311,7 +372,15 @@ def test_get_rejects_structurally_malformed_responses(body: object) -> None:
 @pytest.mark.integration
 def test_get_parser_rejects_non_string_mapping_key() -> None:
     with pytest.raises(QueryError, match="malformed"):
-        _AdminServiceProviderTransport._parse_entity({1: "bad"})
+        _AdminServiceProviderTransport._parse_keyed_entity_response({1: "bad"})
+
+
+@pytest.mark.integration
+def test_get_parser_rejects_non_string_envelope_record_key() -> None:
+    with pytest.raises(QueryError, match="malformed"):
+        _AdminServiceProviderTransport._parse_keyed_entity_response(
+            {"@odata.context": "metadata", "value": [{1: "bad"}]}
+        )
 
 
 @pytest.mark.integration

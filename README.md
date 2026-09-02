@@ -110,6 +110,9 @@ class, or ConfigMgr provider/RBAC invisibility can all surface this way. Scalar
 `bool`, `int`, `float`, and string keys are supported; string OData literals are
 escaped and URI-safe. Composite WMI keys are not yet represented. As with query
 results, raw property casing remains defined by AdminService.
+The WMI controller may place a keyed result inside an OData `value` envelope;
+the SDK unwraps that transport detail, so callers receive the same public result
+type whether AdminService returns an envelope or a bare entity object.
 
 The internal HTTP boundary uses stable `httpx2`, operating-system certificate
 trust, finite timeouts, bounded response decoding, and disabled redirects.

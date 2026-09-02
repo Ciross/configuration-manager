@@ -42,7 +42,7 @@ class _AdminServiceContinuation:
 
 
 class _AdminServiceProviderTransport:
-    """Translate provider-shaped WMI collection queries to AdminService HTTP."""
+    """Translate WMI collection and keyed requests to AdminService HTTP."""
 
     __slots__ = ("_admin", "_owner")
 
@@ -170,7 +170,7 @@ class _AdminServiceProviderTransport:
             raise QueryError(
                 "AdminService WMI entity request returned a malformed response"
             ) from error
-        return self._parse_entity(payload)
+        return self._parse_keyed_entity_response(payload)
 
     @staticmethod
     def _serialize_key(key: bool | int | float | str) -> str:
@@ -186,12 +186,33 @@ class _AdminServiceProviderTransport:
         return f"'{escaped}'"
 
     @staticmethod
-    def _parse_entity(payload: object) -> RawRecord:
+    def _parse_keyed_entity_response(payload: object) -> RawRecord | None:
         if not isinstance(payload, Mapping):
             raise QueryError(
                 "AdminService WMI entity request returned a malformed object"
             )
-        record = cast("Mapping[object, object]", payload)
+        root = cast("Mapping[object, object]", payload)
+        if "@odata.context" in root and "value" in root:
+            values = root["value"]
+            if not isinstance(values, list):
+                raise QueryError(
+                    "AdminService WMI entity request returned a malformed envelope"
+                )
+            records = cast("list[object]", values)
+            if len(records) > 1:
+                raise QueryError(
+                    "AdminService WMI entity request returned a malformed envelope"
+                )
+            if not records:
+                return None
+            record_value = records[0]
+            if not isinstance(record_value, Mapping):
+                raise QueryError(
+                    "AdminService WMI entity request returned a malformed envelope"
+                )
+            record = cast("Mapping[object, object]", record_value)
+        else:
+            record = root
         if not all(isinstance(key, str) for key in record):
             raise QueryError(
                 "AdminService WMI entity request returned a malformed object"

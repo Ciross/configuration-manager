@@ -266,6 +266,10 @@ path. Only scalar keys are represented, not composite keys. A keyed HTTP 404
 maps to `None`: this means the entity was not returned to the current identity
 and may reflect a missing key, unavailable class, or ConfigMgr provider/RBAC
 invisibility rather than proving global nonexistence.
+The WMI controller may return a keyed entity in a one-item OData `value`
+envelope, despite the single-key route. The provider transport unwraps that
+response while retaining compatibility with a bare entity object; an empty
+envelope maps to `None`, and multiple records violate the keyed contract.
 
 ### Raw values
 
