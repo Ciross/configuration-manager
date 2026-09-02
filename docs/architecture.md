@@ -203,10 +203,10 @@ An internal AdminService service may use an HTTP-shaped executor because that
 is its real protocol. It owns route construction, OData parameter encoding,
 auth application, redirects, pooling, timeouts, TLS verification, JSON limits,
 continuation validation, and status/error translation. It returns SDK raw
-values—not `httpx.Response`, auth-library objects, or arbitrary bytes—to the
+values—not `httpx2.Response`, auth-library objects, or arbitrary bytes—to the
 normal APIs.
 
-The internal executor uses stable HTTPX 0.x with a synchronous pooled client,
+The internal executor uses stable `httpx2` 2.x with a synchronous pooled client,
 finite internal timeouts, disabled redirects, and a per-client system-trust SSL
 context. Its async support is not itself a reason to add async SDK APIs. Windows
 current-credential SSPI integration is implemented behind an internal adapter,
@@ -462,7 +462,7 @@ because enterprise payloads can contain sensitive data.
 
 Authentication (identity establishment), authorization (RBAC rejection), query
 validation, not-found, method failure, server failure, connection, timeout, and
-TLS failures stay distinguishable. Concrete `httpx`, auth-library, COM, or WMI
+TLS failures stay distinguishable. Concrete `httpx2`, auth-library, COM, or WMI
 exceptions never need to be caught in normal public use.
 
 ## Logging and observability
@@ -481,7 +481,7 @@ presentation dependency. Structured hooks or tracing require a later design.
 
 ## Dependencies, compatibility, and packaging
 
-Runtime dependencies must correspond to protocol needs. `httpx` is a candidate
+Runtime dependencies must correspond to protocol needs. `httpx2` is selected
 for HTTP; one or more platform-specific authentication libraries may be needed
 after validation. Standard-library functionality is preferred for models,
 enums, logging, URLs where sufficient, and configuration. Convenience and

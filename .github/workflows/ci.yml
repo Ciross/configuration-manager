@@ -53,4 +53,4 @@ jobs:
       - run: uv sync --locked
       - name: Construct complete Windows client without traffic
         run: |
-          uv run python -c "from configuration_manager.adminservice import AdminService, windows_integrated_authentication; auth = windows_integrated_authentication(); client = AdminService('example.invalid', auth=auth); client.close(); assert client.closed"
+          uv run python -c "import httpx2, httpx2_negotiate_sspi; from configuration_manager.adminservice import AdminService, windows_integrated_authentication; auth = windows_integrated_authentication(); client = AdminService('example.invalid', auth=auth); client.close(); assert client.closed"

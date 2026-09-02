@@ -62,7 +62,7 @@ with ConfigManager(server="cm01.contoso.com") as client:
 ```
 
 No public query, resource, or raw AdminService operations are implemented yet.
-The internal HTTP boundary uses stable HTTPX, operating-system certificate
+The internal HTTP boundary uses stable `httpx2`, operating-system certificate
 trust, finite timeouts, bounded response decoding, and disabled redirects.
 Windows current-credential Negotiate support is present but still requires
 validation against a real ConfigMgr environment before it is wired into the

@@ -10,7 +10,7 @@ from collections.abc import Callable, Mapping
 from types import TracebackType
 from typing import cast
 
-import httpx
+import httpx2
 import truststore
 
 from .config import ConfigManagerConfig
@@ -26,7 +26,7 @@ from .exceptions import (
 )
 from .transport import AdminServiceSurface, JsonValue
 
-_DEFAULT_TIMEOUT = httpx.Timeout(30.0, connect=10.0)
+_DEFAULT_TIMEOUT = httpx2.Timeout(30.0, connect=10.0)
 _MAX_RESPONSE_BYTES = 10 * 1024 * 1024
 
 
@@ -47,12 +47,12 @@ def _system_ssl_context() -> ssl.SSLContext:
     return truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
 
 
-def windows_integrated_authentication() -> httpx.Auth:
+def windows_integrated_authentication() -> httpx2.Auth:
     """Construct current-credential SSPI Negotiate auth without delegation."""
     if sys.platform != "win32":
         raise RuntimeError("Windows Integrated Authentication requires Windows")
-    module = importlib.import_module("httpx_negotiate_sspi")
-    constructor = cast("Callable[..., httpx.Auth]", module.HttpSspiAuth)
+    module = importlib.import_module("httpx2_negotiate_sspi")
+    constructor = cast("Callable[..., httpx2.Auth]", module.HttpNegotiateAuth)
     return constructor(delegate=False)
 
 
@@ -79,15 +79,15 @@ class AdminService:
         server: str,
         *,
         verify_tls: bool = True,
-        auth: httpx.Auth | None = None,
-        transport: httpx.BaseTransport | None = None,
+        auth: httpx2.Auth | None = None,
+        transport: httpx2.BaseTransport | None = None,
     ) -> None:
         config = ConfigManagerConfig(server=server, verify_tls=verify_tls)
-        self._origin = httpx.URL(scheme="https", host=config.server)
+        self._origin = httpx2.URL(scheme="https", host=config.server)
         verification: ssl.SSLContext | bool = (
             _system_ssl_context() if verify_tls else False
         )
-        self._client = httpx.Client(
+        self._client = httpx2.Client(
             verify=verification,
             auth=auth,
             timeout=_DEFAULT_TIMEOUT,
@@ -106,7 +106,7 @@ class AdminService:
         path: str = "",
         *,
         params: Mapping[str, str] | None = None,
-    ) -> httpx.URL:
+    ) -> httpx2.URL:
         """Build one HTTPS AdminService URL, encoding query values once."""
         clean_path = path.lstrip("/")
         url = self._origin.copy_with(path=f"/AdminService/{surface.value}/{clean_path}")
@@ -162,9 +162,9 @@ class AdminService:
                 return bytes(content)
         except _AdminServiceResponseError:
             raise
-        except httpx.TimeoutException as error:
+        except httpx2.TimeoutException as error:
             raise TransportTimeoutError("AdminService request timed out") from error
-        except httpx.ConnectError as error:
+        except httpx2.ConnectError as error:
             if _is_certificate_failure(error):
                 raise TLSVerificationError(
                     "AdminService TLS certificate verification failed"
@@ -172,7 +172,7 @@ class AdminService:
             raise TransportConnectionError(
                 "Could not connect to AdminService"
             ) from error
-        except httpx.HTTPError as error:
+        except httpx2.HTTPError as error:
             raise TransportError("AdminService HTTP transport failed") from error
 
     @staticmethod
