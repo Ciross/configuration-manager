@@ -376,7 +376,11 @@ The implemented boundary is explicit: a raw v1 `Device` record passes through
 the resource mapper to become an immutable `Device`. Its initial fields are
 `id`, `name`, `client_version`, `operating_system`, `is_active`, and
 `last_active_time`; unknown wire fields remain available from `raw.v1` rather
-than being attached to the model. High-level Device pages wrap the provider's
+than being attached to the model. `Device.is_active` remains a nullable Python
+boolean: its mapper accepts JSON booleans and the live-observed numeric `0`/`1`
+representation specifically for
+`Device.IsActive`, while `raw.v1` preserves the service value unchanged.
+High-level Device pages wrap the provider's
 opaque continuation in manager-bound resource state, so callers cannot see or
 replay AdminService next-links across clients.
 

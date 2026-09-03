@@ -21,6 +21,7 @@ from configuration_manager.transport import (
     AdminServiceSurface,
     EntityKeyQuery,
     EntityQuery,
+    JsonValue,
     ProviderMethodCall,
     RawMethodResult,
     RawPage,
@@ -103,12 +104,37 @@ def test_missing_and_null_optional_fields_map_to_none() -> None:
 
 
 @pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        (None, None),
+        (True, True),
+        (False, False),
+        (1, True),
+        (0, False),
+    ],
+)
+def test_boolean_like_is_active_values_are_normalized(
+    raw: JsonValue, expected: bool | None
+) -> None:
+    device = _map_device({"MachineId": 1, "IsActive": raw})
+    assert device.is_active is expected
+    assert device.is_active is None or type(device.is_active) is bool
+
+
+@pytest.mark.parametrize(
+    "raw", [-1, 2, 100, 0.0, 1.0, "0", "1", "true", "false", [], {}]
+)
+def test_invalid_is_active_values_are_rejected(raw: JsonValue) -> None:
+    with pytest.raises(QueryError, match="IsActive"):
+        _map_device({"MachineId": 1, "IsActive": raw})
+
+
+@pytest.mark.parametrize(
     "record",
     [
         {"MachineId": 1, "Name": 2},
         {"MachineId": 1, "ClientVersion": False},
         {"MachineId": 1, "DeviceOS": []},
-        {"MachineId": 1, "IsActive": 1},
     ],
 )
 def test_malformed_known_optional_fields_are_rejected(record: RawRecord) -> None:

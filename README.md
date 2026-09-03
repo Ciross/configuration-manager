@@ -78,8 +78,12 @@ with ConfigManager(server="cm01.contoso.com") as client:
 ```
 
 The initial model fields are `id`, `name`, `client_version`,
-`operating_system`, `is_active`, and aware `last_active_time`. `devices.list()`
-returns one `Page[Device]`; its `limit` maps to AdminService `$top`, a result
+`operating_system`, `is_active`, and aware `last_active_time`. The mapper accepts
+both JSON booleans and the live-observed ConfigMgr numeric `0`/`1`
+representation of `Device.IsActive`, mapping either to a typed Python boolean. This targeted
+normalization does not alter the service representation exposed by `raw.v1`.
+`devices.list()` returns one `Page[Device]`; its `limit` maps to AdminService
+`$top`, a result
 cap rather than a client-selected page size. `devices.iter()` follows opaque
 server pagination lazily, while `devices.get(id)` performs one keyed lookup.
 Missing or RBAC-invisible keyed devices raise `NotFoundError`; this does not
