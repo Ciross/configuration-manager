@@ -41,6 +41,20 @@ def _optional_string(record: Mapping[str, JsonValue], field: str) -> str | None:
     return value
 
 
+def _optional_boolean_flag(record: Mapping[str, JsonValue], field: str) -> bool | None:
+    value = record.get(field)
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return value
+    if type(value) is int:
+        if value == 0:
+            return False
+        if value == 1:
+            return True
+    raise QueryError(f"Device field {field} has an invalid type")
+
+
 def _last_active_time(record: Mapping[str, JsonValue]) -> datetime | None:
     value = record.get("LastActiveTime")
     if value is None:
@@ -63,15 +77,12 @@ def _map_device(record: RawRecord) -> Device:
     machine_id = record.get("MachineId")
     if not isinstance(machine_id, int) or isinstance(machine_id, bool):
         raise QueryError("Device field MachineId must be an integer")
-    is_active = record.get("IsActive")
-    if is_active is not None and not isinstance(is_active, bool):
-        raise QueryError("Device field IsActive has an invalid type")
     return Device(
         id=machine_id,
         name=_optional_string(record, "Name"),
         client_version=_optional_string(record, "ClientVersion"),
         operating_system=_optional_string(record, "DeviceOS"),
-        is_active=is_active,
+        is_active=_optional_boolean_flag(record, "IsActive"),
         last_active_time=_last_active_time(record),
     )
 
