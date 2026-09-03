@@ -2,10 +2,20 @@
 
 ## Unreleased
 
+## 0.2.0 - 2026-09-03
+
 ### Added
 
-- Typed read-only Collection-to-Device member queries.
-- Typed read-only Device-to-Collection membership queries.
+- Typed read-only Device-to-Collection membership queries through
+  `client.devices.collection_memberships`, with explicit pagination and lazy
+  iteration.
+- Typed read-only Collection-to-Device member queries through
+  `client.collections.device_members`, with explicit pagination and lazy
+  iteration.
+- Immutable `DeviceCollectionMembership` and `CollectionDeviceMember`
+  relationship models.
+- Structural provider navigation-query support used by the AdminService v1
+  Device membership relationship.
 
 ## 0.1.0 - 2026-09-03
 
