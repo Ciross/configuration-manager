@@ -245,6 +245,7 @@ def test_public_exports_are_curated() -> None:
         "ConfigManager",
         "ConfigurationError",
         "ConfigurationManagerError",
+        "Device",
         "LifecycleError",
         "MethodInvocationError",
         "NotFoundError",

@@ -63,19 +63,19 @@ making the legacy acronym SCCM the package's primary vocabulary.
 from configuration_manager import ConfigManager
 
 with ConfigManager(server="cm01.contoso.com") as client:
-    device = client.devices.get(name="PC001")
-    first_page = client.collections.list(filter="Name ne null")
+    device = client.devices.get(16777219)
+    first_page = client.devices.list(limit=10)
 
-    raw_page = client.raw.wmi.list(
+    raw_page = client.raw.wmi.query(
         "SMS_R_System",
         filter="Client eq true",
         select=("ResourceId", "Name"),
     )
 ```
 
-Names in examples are proposed public contracts, subject to deliberate
-pre-1.0 refinement; examples do not claim every named resource or filter is
-available in every ConfigMgr release.
+`Device` / `Devices` is the first implemented high-level slice, over
+`/AdminService/v1.0/Device`. Other conceptual resources remain subject to
+deliberate pre-1.0 refinement and ConfigMgr version availability.
 
 ### Responsibilities and configuration
 
@@ -265,8 +265,9 @@ The implemented `raw.wmi` and `raw.v1` namespaces expose the same read-only
 `ProviderTransport`. Their `get` methods use the canonical parenthesized
 single-key route and perform one request. Keys share the OData primitive-literal
 serializer; string literals double
-embedded quotes and are URI-encoded so their contents cannot escape the WMI
-path. Only scalar keys are represented, not composite keys. A keyed HTTP 404
+embedded quotes and are URI-encoded so their contents cannot escape the
+originating AdminService entity path or surface. Only scalar keys are
+represented, not composite keys. A keyed HTTP 404
 maps to `None`: this means the entity was not returned to the current identity
 and may reflect a missing key, unavailable class, or ConfigMgr provider/RBAC
 invisibility rather than proving global nonexistence.
@@ -368,9 +369,16 @@ Resource managers own remote behavior and mapping. Models never implement
 methods such as `device.collections()`. Relationships are explicit and testable:
 
 ```python
-device = client.devices.get(name="PC001")
-memberships = client.collections.for_device(device.id)
+device = client.devices.get(16777219)
 ```
+
+The implemented boundary is explicit: a raw v1 `Device` record passes through
+the resource mapper to become an immutable `Device`. Its initial fields are
+`id`, `name`, `client_version`, `operating_system`, `is_active`, and
+`last_active_time`; unknown wire fields remain available from `raw.v1` rather
+than being attached to the model. High-level Device pages wrap the provider's
+opaque continuation in manager-bound resource state, so callers cannot see or
+replay AdminService next-links across clients.
 
 Terminology is capability-specific:
 
@@ -537,7 +545,7 @@ not every source file. A PEP 561 marker remains required.
 The originally suggested resource breadth is too large for the first
 architecture validation. A realistic read-only v0.1 is:
 
-1. Immutable configuration, exception taxonomy, lifecycle-only `ConfigManager`,
+1. Immutable configuration, exception taxonomy, synchronous `ConfigManager`,
    auth strategy protocol, and deterministic unit-test seams.
 2. Synchronous AdminService HTTP transport with one validated integrated-auth
    adapter, strict TLS/timeout/redaction behavior, and mocked integration tests.
@@ -545,9 +553,8 @@ architecture validation. A realistic read-only v0.1 is:
    in a lab**, plus OData filter/select and one-page/continuation handling.
 4. `raw.v1` metadata/query/get for proven entities, without pretending parity
    with `/wmi/`.
-5. One vertical high-level read-only slice: `Device`, `Devices`, and typed
-   pagination. Add basic site information only if required for diagnostics or
-   capability discovery.
+5. One vertical high-level read-only slice, now implemented: `Device`, `Devices`,
+   and typed pagination over `/AdminService/v1.0/Device`.
 
 Users, collections, and applications follow in later 0.x milestones after the
 vertical slice validates mapping, RBAC, version variance, and pagination.
