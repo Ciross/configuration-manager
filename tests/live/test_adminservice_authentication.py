@@ -9,7 +9,7 @@ from datetime import datetime
 
 import pytest
 
-from configuration_manager import ConfigManager, Device
+from configuration_manager import Collection, CollectionType, ConfigManager, Device
 from configuration_manager.adminservice import (
     AdminService,
     windows_integrated_authentication,
@@ -152,3 +152,53 @@ def test_public_devices_get_visible_device() -> None:
         device = client.devices.get(resource_id)
     assert isinstance(device, Device)
     assert device.id == resource_id
+
+
+@pytest.mark.live
+def test_public_collections_list() -> None:
+    """Validate the typed Collection WMI boundary."""
+    if sys.platform != "win32":
+        pytest.skip("Integrated Authentication validation requires Windows")
+    server = os.environ.get("CONFIGURATION_MANAGER_LIVE_SERVER")
+    if not server:
+        pytest.skip("CONFIGURATION_MANAGER_LIVE_SERVER is not configured")
+    with ConfigManager(server=server) as client:
+        page = client.collections.list(limit=1)
+    assert len(page.items) <= 1
+    if page.items:
+        collection = page.items[0]
+        assert isinstance(collection, Collection)
+        assert isinstance(collection.id, str) and collection.id.strip()
+        assert isinstance(collection.collection_type, CollectionType)
+        assert collection.name is None or isinstance(collection.name, str)
+        assert collection.member_count is None or (
+            isinstance(collection.member_count, int)
+            and not isinstance(collection.member_count, bool)
+            and collection.member_count >= 0
+        )
+        assert collection.limiting_collection_id is None or isinstance(
+            collection.limiting_collection_id, str
+        )
+        assert collection.limiting_collection_name is None or isinstance(
+            collection.limiting_collection_name, str
+        )
+        assert collection.is_builtin is None or isinstance(collection.is_builtin, bool)
+
+
+@pytest.mark.live
+def test_public_collections_get_visible_collection() -> None:
+    """Validate typed keyed lookup using a visible collection ID."""
+    if sys.platform != "win32":
+        pytest.skip("Integrated Authentication validation requires Windows")
+    server = os.environ.get("CONFIGURATION_MANAGER_LIVE_SERVER")
+    if not server:
+        pytest.skip("CONFIGURATION_MANAGER_LIVE_SERVER is not configured")
+    with ConfigManager(server=server) as client:
+        page = client.raw.wmi.query("SMS_Collection", select=("CollectionID",), top=1)
+        if not page.items:
+            pytest.skip("the current identity has no visible collections")
+        collection_id = page.items[0]["CollectionID"]
+        assert isinstance(collection_id, str) and collection_id.strip()
+        collection = client.collections.get(collection_id)
+    assert isinstance(collection, Collection)
+    assert collection.id == collection_id

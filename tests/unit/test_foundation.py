@@ -242,6 +242,8 @@ def test_public_exports_are_curated() -> None:
         "AmbiguousResultError",
         "AuthenticationError",
         "AuthorizationError",
+        "Collection",
+        "CollectionType",
         "ConfigManager",
         "ConfigurationError",
         "ConfigurationManagerError",
