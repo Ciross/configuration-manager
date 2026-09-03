@@ -92,6 +92,24 @@ not reuse the WMI-backed `Collection` model because the expanded v1 relation
 and the WMI provider entity are distinct contracts with different required
 fields.
 
+The implemented reciprocal Device-collection relationship is:
+
+```text
+Collection
+  -> /AdminService/wmi/SMS_Collection
+  -> /AdminService/wmi/SMS_FullCollectionMembership
+       filtered by CollectionID
+```
+
+Microsoft recommends `SMS_FullCollectionMembership` for enumerating collection
+members. This relationship therefore uses the WMI AdminService surface, unlike
+Device-to-Collection membership's v1 navigation route. Its immutable
+`CollectionDeviceMember` relationship model is intentionally distinct from the
+v1-backed `Device` model because those provider records have different
+contracts. `device_members()` resolves the root collection first and requires a
+Device collection, preventing User collection members from being silently
+reinterpreted as devices.
+
 ### Responsibilities and configuration
 
 `ConfigManager` is a composition root and lifecycle owner. It validates and

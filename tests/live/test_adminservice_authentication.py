@@ -11,6 +11,7 @@ import pytest
 
 from configuration_manager import (
     Collection,
+    CollectionDeviceMember,
     CollectionType,
     ConfigManager,
     Device,
@@ -258,3 +259,62 @@ def test_public_device_collection_membership_iterator() -> None:
             pytest.skip("sampled devices have no visible collection memberships")
     assert isinstance(item, DeviceCollectionMembership)
     assert item.device_id == device.id
+
+
+@pytest.mark.live
+def test_public_collection_device_members() -> None:
+    """Validate the typed Collection-to-Device relationship."""
+    if sys.platform != "win32":
+        pytest.skip("Integrated Authentication validation requires Windows")
+    server = os.environ.get("CONFIGURATION_MANAGER_LIVE_SERVER")
+    if not server:
+        pytest.skip("CONFIGURATION_MANAGER_LIVE_SERVER is not configured")
+    with ConfigManager(server=server) as client:
+        collections = sorted(
+            (
+                item
+                for item in client.collections.list(limit=20).items
+                if item.collection_type is CollectionType.DEVICE
+            ),
+            key=lambda item: not bool(item.member_count),
+        )
+        for collection in collections:
+            page = client.collections.device_members(collection.id, limit=1)
+            if page.items:
+                member = page.items[0]
+                break
+        else:
+            pytest.skip("sampled Device collections have no visible members")
+    assert isinstance(member, CollectionDeviceMember)
+    assert member.collection_id == collection.id
+    assert isinstance(member.device_id, int) and not isinstance(member.device_id, bool)
+    assert member.device_id > 0
+    assert member.device_name is None or isinstance(member.device_name, str)
+
+
+@pytest.mark.live
+def test_public_collection_device_member_iterator() -> None:
+    """Validate lazy public traversal of Collection device members."""
+    if sys.platform != "win32":
+        pytest.skip("Integrated Authentication validation requires Windows")
+    server = os.environ.get("CONFIGURATION_MANAGER_LIVE_SERVER")
+    if not server:
+        pytest.skip("CONFIGURATION_MANAGER_LIVE_SERVER is not configured")
+    with ConfigManager(server=server) as client:
+        collections = sorted(
+            (
+                item
+                for item in client.collections.list(limit=20).items
+                if item.collection_type is CollectionType.DEVICE
+            ),
+            key=lambda item: not bool(item.member_count),
+        )
+        for collection in collections:
+            member = next(client.collections.iter_device_members(collection.id), None)
+            if member is not None:
+                break
+        else:
+            pytest.skip("sampled Device collections have no visible members")
+    assert isinstance(member, CollectionDeviceMember)
+    assert member.collection_id == collection.id
+    assert member.device_id > 0
