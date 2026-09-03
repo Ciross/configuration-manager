@@ -136,6 +136,21 @@ provider lookup; missing or RBAC-invisible objects raise `NotFoundError`, withou
 claiming global nonexistence. ConfigMgr RBAC remains authoritative. Advanced
 filtering and unknown WMI properties remain available through `client.raw.wmi`.
 
+Device members of a Device collection are exposed as immutable
+`CollectionDeviceMember` relationship values:
+
+```python
+with ConfigManager(server="cm01.contoso.com") as client:
+    members = client.collections.device_members("SMS00001", limit=10)
+
+    for member in members.items:
+        print(member.device_id, member.device_name)
+```
+
+Use `next_device_members_page()` for explicit pagination or
+`iter_device_members()` to traverse the server continuations lazily. The root
+collection is resolved first to ensure that it is a Device collection.
+
 ### Raw provider access
 
 The raw API also queries AdminService's WMI provider surface:

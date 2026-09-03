@@ -1,7 +1,14 @@
 """Immutable high-level Configuration Manager domain models."""
 
 from .collection import Collection, CollectionType
+from .collection_device_member import CollectionDeviceMember
 from .device import Device
 from .device_collection_membership import DeviceCollectionMembership
 
-__all__ = ("Collection", "CollectionType", "Device", "DeviceCollectionMembership")
+__all__ = (
+    "Collection",
+    "CollectionDeviceMember",
+    "CollectionType",
+    "Device",
+    "DeviceCollectionMembership",
+)

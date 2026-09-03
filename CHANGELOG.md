@@ -4,6 +4,7 @@
 
 ### Added
 
+- Typed read-only Collection-to-Device member queries.
 - Typed read-only Device-to-Collection membership queries.
 
 ## 0.1.0 - 2026-09-03
