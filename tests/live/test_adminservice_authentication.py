@@ -70,3 +70,37 @@ def test_public_wmi_get_visible_system() -> None:
     assert fetched is not None
     assert fetched["ResourceId"] == resource_id
     assert "Name" in fetched
+
+
+@pytest.mark.live
+def test_public_v1_device_query() -> None:
+    """Validate the public versioned Device collection route."""
+    if sys.platform != "win32":
+        pytest.skip("Integrated Authentication validation requires Windows")
+    server = os.environ.get("CONFIGURATION_MANAGER_LIVE_SERVER")
+    if not server:
+        pytest.skip("CONFIGURATION_MANAGER_LIVE_SERVER is not configured")
+    with ConfigManager(server=server) as client:
+        page = client.raw.v1.query("Device", top=1)
+    assert len(page.items) <= 1
+    if page.items:
+        assert bool(page.items[0])
+
+
+@pytest.mark.live
+def test_public_v1_get_visible_device() -> None:
+    """Fetch a versioned Device whose resource is visible through WMI."""
+    if sys.platform != "win32":
+        pytest.skip("Integrated Authentication validation requires Windows")
+    server = os.environ.get("CONFIGURATION_MANAGER_LIVE_SERVER")
+    if not server:
+        pytest.skip("CONFIGURATION_MANAGER_LIVE_SERVER is not configured")
+    with ConfigManager(server=server) as client:
+        page = client.raw.wmi.query("SMS_R_System", select=("ResourceId",), top=1)
+        if not page.items:
+            pytest.skip("the current identity has no visible systems")
+        resource_id = page.items[0]["ResourceId"]
+        assert isinstance(resource_id, int) and not isinstance(resource_id, bool)
+        device = client.raw.v1.get("Device", resource_id)
+    assert device is not None
+    assert bool(device)

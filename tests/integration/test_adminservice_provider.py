@@ -452,3 +452,183 @@ def test_get_validates_class_without_request() -> None:
         with pytest.raises(ValueError):
             client.raw.wmi.get(entity, 1)
     assert requests == []
+
+
+@pytest.mark.integration
+def test_v1_query_serializes_options_once_and_preserves_property_casing() -> None:
+    requests: list[httpx2.Request] = []
+
+    def respond(request: httpx2.Request) -> httpx2.Response:
+        requests.append(request)
+        return httpx2.Response(200, json={"value": [{"ResourceID": 123}]})
+
+    client = client_with(httpx2.MockTransport(respond))
+    page = client.raw.v1.query(
+        "Device",
+        filter="Name eq 'A B%'",
+        select=("ResourceId", "Name"),
+        expand=("Resource",),
+        order_by=("Name",),
+        top=1,
+    )
+    assert page.items == ({"ResourceID": 123},)
+    assert len(requests) == 1
+    assert requests[0].url.path == "/AdminService/v1.0/Device"
+    assert dict(requests[0].url.params) == {
+        "$filter": "Name eq 'A B%'",
+        "$select": "ResourceId,Name",
+        "$expand": "Resource",
+        "$orderby": "Name",
+        "$top": "1",
+    }
+    assert "%2525" not in str(requests[0].url)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    ("key", "suffix"),
+    [(123, b"Device(123)"), ("O'Neil", b"Device('O''Neil')")],
+)
+def test_v1_get_reuses_scalar_key_route(key: int | str, suffix: bytes) -> None:
+    requests: list[httpx2.Request] = []
+
+    def respond(request: httpx2.Request) -> httpx2.Response:
+        requests.append(request)
+        return httpx2.Response(200, json={"ResourceID": 123, "Name": "PC001"})
+
+    client = client_with(httpx2.MockTransport(respond))
+    assert client.raw.v1.get("Device", key) == {
+        "ResourceID": 123,
+        "Name": "PC001",
+    }
+    assert len(requests) == 1
+    assert requests[0].url.raw_path == b"/AdminService/v1.0/" + suffix
+
+
+@pytest.mark.integration
+def test_v1_get_404_returns_none_after_one_request() -> None:
+    requests: list[httpx2.Request] = []
+
+    def respond(request: httpx2.Request) -> httpx2.Response:
+        requests.append(request)
+        return httpx2.Response(404, text="secret")
+
+    client = client_with(httpx2.MockTransport(respond))
+    assert client.raw.v1.get("Device", 123) is None
+    assert len(requests) == 1
+
+
+@pytest.mark.integration
+def test_v1_rejects_non_finite_key_and_invalid_entity_without_request() -> None:
+    requests: list[httpx2.Request] = []
+    client = client_with(
+        httpx2.MockTransport(
+            lambda request: (requests.append(request), httpx2.Response(200))[1]
+        )
+    )
+    with pytest.raises(ValueError, match="finite"):
+        client.raw.v1.get("Device", float("nan"))
+    for entity in (
+        "Device/Events",
+        "Device(1)",
+        "Device?x=y",
+        "Device#fragment",
+        "https://evil.example",
+    ):
+        with pytest.raises(ValueError):
+            client.raw.v1.query(entity)
+    assert requests == []
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    "link",
+    [
+        "http://cm01.contoso.com/AdminService/v1.0/Device?$skiptoken=x",
+        "https://evil.example/AdminService/v1.0/Device?$skiptoken=x",
+        "https://cm01.contoso.com:8443/AdminService/v1.0/Device?$skiptoken=x",
+        "https://cm01.contoso.com/AdminService/wmi/Device?$skiptoken=x",
+    ],
+)
+def test_v1_unsafe_continuation_is_rejected_before_replay(link: str) -> None:
+    requests: list[httpx2.Request] = []
+
+    def respond(request: httpx2.Request) -> httpx2.Response:
+        requests.append(request)
+        return httpx2.Response(200, json={"value": [], "@odata.nextLink": link})
+
+    client = client_with(httpx2.MockTransport(respond))
+    with pytest.raises(QueryError):
+        client.raw.v1.query("Device")
+    assert len(requests) == 1
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    "link",
+    [
+        "/AdminService/v1.0/Device?$skiptoken=A%2FB%3D",
+        "https://cm01.contoso.com:443/AdminService/v1.0/Device?$skiptoken=A%2FB%3D",
+    ],
+)
+def test_v1_continuation_is_opaque_and_original_options_are_not_merged(
+    link: str,
+) -> None:
+    requests: list[httpx2.Request] = []
+
+    def respond(request: httpx2.Request) -> httpx2.Response:
+        requests.append(request)
+        if len(requests) == 1:
+            return httpx2.Response(
+                200,
+                json={"value": [{"Name": "PC001"}], "@odata.nextLink": link},
+            )
+        return httpx2.Response(200, json={"value": [{"Name": "PC002"}]})
+
+    client = client_with(httpx2.MockTransport(respond))
+    first = client.raw.v1.query(
+        "Device", filter="Name ne null", select=("Name",), top=1
+    )
+    assert first.has_next
+    second = client.raw.v1.next_page(first)
+    assert second.items == ({"Name": "PC002"},)
+    assert len(requests) == 2
+    assert requests[1].url.query == b"$skiptoken=A%2FB%3D"
+    assert "$filter" not in requests[1].url.params
+    assert "$select" not in requests[1].url.params
+    assert "$top" not in requests[1].url.params
+
+
+@pytest.mark.integration
+def test_continuations_cannot_cross_adminservice_surfaces() -> None:
+    requests: list[httpx2.Request] = []
+
+    def respond(request: httpx2.Request) -> httpx2.Response:
+        requests.append(request)
+        surface = "v1.0/Device" if "v1.0" in request.url.path else "wmi/SMS_R_System"
+        return httpx2.Response(
+            200,
+            json={
+                "value": [],
+                "@odata.nextLink": f"/AdminService/{surface}?$skiptoken=x",
+            },
+        )
+
+    client = client_with(httpx2.MockTransport(respond))
+    v1_page = client.raw.v1.query("Device")
+    with pytest.raises(ValueError, match="another surface"):
+        client.raw.wmi.next_page(v1_page)
+    wmi_page = client.raw.wmi.query("SMS_R_System")
+    with pytest.raises(ValueError, match="another surface"):
+        client.raw.v1.next_page(wmi_page)
+    assert len(requests) == 2
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("status", [400, 404])
+def test_v1_query_client_errors_are_safe_and_surface_correct(status: int) -> None:
+    client = client_with(
+        httpx2.MockTransport(lambda _request: httpx2.Response(status, text="secret"))
+    )
+    with pytest.raises(QueryError, match=rf"v1 query failed with HTTP {status}"):
+        client.raw.v1.query("Device", filter="Secret eq 1")
