@@ -142,8 +142,10 @@ def test_typed_membership_uses_exact_navigation_route_and_options() -> None:
                 "value": [
                     {
                         "Collection": {
-                            "CollectionID": "SMS00001",
-                            "Name": "All Systems",
+                            "SiteID": "SMS00001",
+                            "CollectionID": 16777219,
+                            "CollectionName": "All Systems",
+                            "Flags": 4,
                             "IgnoredFutureProperty": "future",
                         },
                         "IgnoredMembershipProperty": 123,
@@ -173,7 +175,7 @@ def test_membership_404_and_malformed_relationship_are_typed_errors() -> None:
     with pytest.raises(NotFoundError, match="not visible"):
         missing.devices.collection_memberships(123)
 
-    for record in ({"Collection": None}, {"Collection": {"CollectionID": " "}}):
+    for record in ({"Collection": None}, {"Collection": {"SiteID": " "}}):
         malformed = client_with(
             httpx2.MockTransport(
                 lambda _request, record=record: httpx2.Response(
@@ -195,16 +197,14 @@ def test_membership_continuation_replays_server_url_unchanged() -> None:
             return httpx2.Response(
                 200,
                 json={
-                    "value": [{"Collection": {"CollectionID": "A"}}],
+                    "value": [{"Collection": {"SiteID": "A"}}],
                     "@odata.nextLink": (
                         "/AdminService/v1.0/Device(7)/ResourceCollectionMembership"
                         "?$skiptoken=A%2FB%3D"
                     ),
                 },
             )
-        return httpx2.Response(
-            200, json={"value": [{"Collection": {"CollectionID": "B"}}]}
-        )
+        return httpx2.Response(200, json={"value": [{"Collection": {"SiteID": "B"}}]})
 
     client = client_with(httpx2.MockTransport(respond))
     second = client.devices.next_collection_memberships_page(

@@ -105,16 +105,17 @@ def _map_device_collection_membership(
             "Device collection membership field Collection must be an object"
         )
     collection = cast("Mapping[object, object]", collection_value)
-    collection_id = collection.get("CollectionID")
+    collection_id = collection.get("SiteID")
     if not isinstance(collection_id, str) or not collection_id.strip():
         raise QueryError(
-            "Device collection membership field Collection.CollectionID must be a "
+            "Device collection membership field Collection.SiteID must be a "
             "non-empty string"
         )
-    name = collection.get("Name")
+    name = collection.get("CollectionName")
     if name is not None and not isinstance(name, str):
         raise QueryError(
-            "Device collection membership field Collection.Name has an invalid type"
+            "Device collection membership field Collection.CollectionName has an "
+            "invalid type"
         )
     return DeviceCollectionMembership(device_id, collection_id, name)
 
