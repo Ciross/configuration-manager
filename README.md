@@ -260,9 +260,9 @@ AdminService certificate chain.
 
 ## Releasing
 
-Version 0.1.0 is the first public release. The manually verified build and live
-release-candidate validation steps are documented in the
-[release guide](docs/releasing.md).
+Releases are manually verified with the ordinary test suite, controlled
+integration coverage, a clean wheel installation, and the opt-in live ConfigMgr
+suite. See the [release guide](docs/releasing.md).
 
 ## License
 
