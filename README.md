@@ -228,6 +228,12 @@ The Windows authentication probe additionally requires
 `CONFIGURATION_MANAGER_LIVE_SERVER` and a machine whose system store trusts the
 AdminService certificate chain.
 
+## Releasing
+
+Version 0.1.0 is the first public release. The manually verified build and live
+release-candidate validation steps are documented in the
+[release guide](docs/releasing.md).
+
 ## License
 
 This project is licensed under the [MIT License](LICENSE).
