@@ -2,8 +2,7 @@
 
 > [!IMPORTANT]
 > This project is in **very early development**. It provides typed configuration,
-> lifecycle, and an internal AdminService HTTP/authentication foundation, but no
-> its first public, read-only Configuration Manager query surface.
+> lifecycle, a typed read-only Device API, and raw AdminService query surfaces.
 
 `configuration-manager` is intended to become a strongly typed Python SDK for
 Microsoft Configuration Manager (ConfigMgr, formerly SCCM and MECM). It will
@@ -20,7 +19,7 @@ underlying capabilities without weakening the high-level abstractions.
 
 ## Intended architecture
 
-The following is a direction, not an implemented API:
+The Device branch is implemented; the other resource branches remain direction:
 
 ```text
 High-level API
@@ -50,9 +49,9 @@ Low-level API
 AdminService / SMS Provider
 ```
 
-The first executable foundation includes the exception taxonomy, immutable
-configuration, typed pages, and provider capability contracts. A lifecycle-only
-client can be constructed without any remote activity:
+The executable foundation includes the exception taxonomy, immutable
+configuration, typed pages, and provider capability contracts. A client can be
+constructed without any remote activity:
 
 ```python
 from configuration_manager import ConfigManager
@@ -61,7 +60,40 @@ with ConfigManager(server="cm01.contoso.com") as client:
     assert not client.closed
 ```
 
-The first public operation queries AdminService's WMI provider surface:
+### Typed devices
+
+The first high-level resource maps the AdminService v1 `Device` entity to an
+immutable, slotted `Device` model:
+
+```python
+from configuration_manager import ConfigManager
+
+with ConfigManager(server="cm01.contoso.com") as client:
+    page = client.devices.list(limit=10)
+
+    for device in page.items:
+        print(device.id, device.name)
+
+    device = client.devices.get(16777219)
+```
+
+The initial model fields are `id`, `name`, `client_version`,
+`operating_system`, `is_active`, and aware `last_active_time`. The mapper accepts
+both JSON booleans and the live-observed ConfigMgr numeric `0`/`1`
+representation of `Device.IsActive`, mapping either to a typed Python boolean. This targeted
+normalization does not alter the service representation exposed by `raw.v1`.
+`devices.list()` returns one `Page[Device]`; its `limit` maps to AdminService
+`$top`, a result
+cap rather than a client-selected page size. `devices.iter()` follows opaque
+server pagination lazily, while `devices.get(id)` performs one keyed lookup.
+Missing or RBAC-invisible keyed devices raise `NotFoundError`; this does not
+prove global nonexistence because ConfigMgr RBAC remains authoritative.
+Advanced OData querying and unknown v1 fields remain available through
+`client.raw.v1`.
+
+### Raw provider access
+
+The raw API also queries AdminService's WMI provider surface:
 
 ```python
 from configuration_manager import ConfigManager

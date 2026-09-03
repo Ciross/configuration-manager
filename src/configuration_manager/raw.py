@@ -57,7 +57,7 @@ class _RawEntitySurface:
         select: tuple[str, ...] = (),
         expand: tuple[str, ...] = (),
     ) -> RawRecord | None:
-        """Return one keyed WMI entity, or ``None`` when it is not visible."""
+        """Return one keyed entity, or ``None`` when it is not visible."""
         transport = self._client._provider_transport()
         return transport.get_entity(
             EntityKeyQuery(

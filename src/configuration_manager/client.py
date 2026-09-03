@@ -1,4 +1,4 @@
-"""Lifecycle-only public client."""
+"""Public synchronous Configuration Manager client."""
 
 # The composition root intentionally constructs the internal concrete transport.
 # pyright: reportPrivateUsage=false
@@ -12,18 +12,18 @@ from .adminservice_transport import _AdminServiceProviderTransport
 from .config import ConfigManagerConfig
 from .exceptions import ConfigurationError, LifecycleError
 from .raw import Raw
+from .resources import Devices
 from .transport import ProviderTransport
 
 
 class ConfigManager:
     """Synchronous configuration and lifecycle composition root.
 
-    Construction performs local work only. Read-only raw WMI queries are the
-    first provider operation. By default, callers retain ownership of injected
-    transports.
+    Construction performs local work only. By default, callers retain ownership
+    of injected transports.
     """
 
-    __slots__ = ("_closed", "_config", "_own_transport", "_transport", "raw")
+    __slots__ = ("_closed", "_config", "_own_transport", "_transport", "devices", "raw")
 
     def __init__(
         self,
@@ -59,6 +59,7 @@ class ConfigManager:
             self._own_transport = own_transport
         self._closed = False
         self.raw = Raw(self)
+        self.devices = Devices(self)
 
     def _provider_transport(self) -> ProviderTransport:
         self._require_open()

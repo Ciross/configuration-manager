@@ -5,10 +5,11 @@
 
 import os
 import sys
+from datetime import datetime
 
 import pytest
 
-from configuration_manager import ConfigManager
+from configuration_manager import ConfigManager, Device
 from configuration_manager.adminservice import (
     AdminService,
     windows_integrated_authentication,
@@ -104,3 +105,50 @@ def test_public_v1_get_visible_device() -> None:
         device = client.raw.v1.get("Device", resource_id)
     assert device is not None
     assert bool(device)
+
+
+@pytest.mark.live
+def test_public_devices_list() -> None:
+    """Validate the typed Device collection boundary."""
+    if sys.platform != "win32":
+        pytest.skip("Integrated Authentication validation requires Windows")
+    server = os.environ.get("CONFIGURATION_MANAGER_LIVE_SERVER")
+    if not server:
+        pytest.skip("CONFIGURATION_MANAGER_LIVE_SERVER is not configured")
+    with ConfigManager(server=server) as client:
+        page = client.devices.list(limit=1)
+    assert len(page.items) <= 1
+    if page.items:
+        device = page.items[0]
+        assert isinstance(device, Device)
+        assert isinstance(device.id, int) and not isinstance(device.id, bool)
+        assert device.name is None or isinstance(device.name, str)
+        assert device.client_version is None or isinstance(device.client_version, str)
+        assert device.operating_system is None or isinstance(
+            device.operating_system, str
+        )
+        assert device.is_active is None or isinstance(device.is_active, bool)
+        assert device.last_active_time is None or (
+            isinstance(device.last_active_time, datetime)
+            and device.last_active_time.tzinfo is not None
+            and device.last_active_time.utcoffset() is not None
+        )
+
+
+@pytest.mark.live
+def test_public_devices_get_visible_device() -> None:
+    """Validate typed keyed lookup using a visible WMI resource ID."""
+    if sys.platform != "win32":
+        pytest.skip("Integrated Authentication validation requires Windows")
+    server = os.environ.get("CONFIGURATION_MANAGER_LIVE_SERVER")
+    if not server:
+        pytest.skip("CONFIGURATION_MANAGER_LIVE_SERVER is not configured")
+    with ConfigManager(server=server) as client:
+        page = client.raw.wmi.query("SMS_R_System", select=("ResourceId",), top=1)
+        if not page.items:
+            pytest.skip("the current identity has no visible systems")
+        resource_id = page.items[0]["ResourceId"]
+        assert isinstance(resource_id, int) and not isinstance(resource_id, bool)
+        device = client.devices.get(resource_id)
+    assert isinstance(device, Device)
+    assert device.id == resource_id
