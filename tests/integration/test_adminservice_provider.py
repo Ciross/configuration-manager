@@ -2,6 +2,8 @@
 
 # pyright: reportPrivateUsage=false
 
+from typing import cast
+
 import httpx2
 import pytest
 
@@ -14,6 +16,11 @@ from configuration_manager import (
 )
 from configuration_manager.adminservice import AdminService
 from configuration_manager.adminservice_transport import _AdminServiceProviderTransport
+from configuration_manager.transport import (
+    AdminServiceSurface,
+    NavigationQuery,
+    ODataQueryOptions,
+)
 
 
 def client_with(handler: httpx2.MockTransport) -> ConfigManager:
@@ -23,6 +30,131 @@ def client_with(handler: httpx2.MockTransport) -> ConfigManager:
         ),
         own_transport=True,
     )
+
+
+def provider_with(handler: httpx2.MockTransport) -> _AdminServiceProviderTransport:
+    return _AdminServiceProviderTransport(
+        AdminService("cm01.contoso.com", transport=handler)
+    )
+
+
+@pytest.mark.integration
+def test_navigation_query_serializes_string_key_safely() -> None:
+    requests: list[httpx2.Request] = []
+
+    def respond(request: httpx2.Request) -> httpx2.Response:
+        requests.append(request)
+        return httpx2.Response(200, json={"value": []})
+
+    provider_with(httpx2.MockTransport(respond)).query_navigation(
+        NavigationQuery(
+            AdminServiceSurface.V1,
+            "Device",
+            "A'B/?#",
+            "ResourceCollectionMembership",
+            ODataQueryOptions(select=("Collection",), expand=("Collection",), top=10),
+        )
+    )
+    assert requests[0].url.raw_path == (
+        b"/AdminService/v1.0/Device('A''B%2F%3F%23')/ResourceCollectionMembership"
+        b"?%24select=Collection&%24expand=Collection&%24top=10"
+    )
+    assert dict(requests[0].url.params) == {
+        "$select": "Collection",
+        "$expand": "Collection",
+        "$top": "10",
+    }
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    "navigation", ["", "/evil", "A/B", "A?x", "A#x", "..", "Name(1)"]
+)
+def test_unsafe_navigation_identifier_is_rejected_without_io(
+    navigation: str,
+) -> None:
+    requests: list[httpx2.Request] = []
+    provider = provider_with(
+        httpx2.MockTransport(
+            lambda request: (requests.append(request), httpx2.Response(200))[1]
+        )
+    )
+    with pytest.raises(ValueError, match="navigation"):
+        provider.query_navigation(
+            NavigationQuery(AdminServiceSurface.V1, "Device", 1, navigation)
+        )
+    assert requests == []
+
+
+def test_navigation_query_rejects_null_key() -> None:
+    with pytest.raises(ValueError, match="key"):
+        NavigationQuery(  # type: ignore[arg-type]
+            AdminServiceSurface.V1,
+            "Device",
+            cast("bool | int | float | str", None),
+            "Membership",
+        )
+
+
+@pytest.mark.integration
+def test_navigation_continuation_rejects_wrong_surface_and_cross_origin() -> None:
+    for link in (
+        "https://evil.example/AdminService/v1.0/X?$skiptoken=x",
+        "https://cm01.contoso.com/AdminService/wmi/X?$skiptoken=x",
+    ):
+        provider = provider_with(
+            httpx2.MockTransport(
+                lambda _request, link=link: httpx2.Response(
+                    200, json={"value": [], "@odata.nextLink": link}
+                )
+            )
+        )
+        with pytest.raises(QueryError, match="unsafe continuation"):
+            provider.query_navigation(
+                NavigationQuery(
+                    AdminServiceSurface.V1,
+                    "Device",
+                    1,
+                    "ResourceCollectionMembership",
+                )
+            )
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("status", [400, 422])
+def test_navigation_client_errors_other_than_initial_404_are_query_errors(
+    status: int,
+) -> None:
+    provider = provider_with(
+        httpx2.MockTransport(lambda _request: httpx2.Response(status))
+    )
+    match = rf"navigation query failed with HTTP {status}"
+    with pytest.raises(QueryError, match=match):
+        provider.query_navigation(
+            NavigationQuery(
+                AdminServiceSurface.V1,
+                "Device",
+                1,
+                "ResourceCollectionMembership",
+            )
+        )
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("body", [{}, {"value": {}}, {"value": [1]}])
+def test_navigation_malformed_envelope_is_a_query_error(body: object) -> None:
+    provider = provider_with(
+        httpx2.MockTransport(lambda _request: httpx2.Response(200, json=body))
+    )
+    with pytest.raises(QueryError, match="malformed collection"):
+        provider.query_navigation(
+            NavigationQuery(
+                AdminServiceSurface.V1,
+                "Device",
+                1,
+                "ResourceCollectionMembership",
+            )
+        )
 
 
 @pytest.mark.integration

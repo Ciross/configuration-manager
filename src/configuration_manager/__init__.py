@@ -17,7 +17,7 @@ from .exceptions import (
     TransportError,
     TransportTimeoutError,
 )
-from .models import Collection, CollectionType, Device
+from .models import Collection, CollectionType, Device, DeviceCollectionMembership
 from .pagination import Page
 
 __all__ = (
@@ -30,6 +30,7 @@ __all__ = (
     "ConfigurationError",
     "ConfigurationManagerError",
     "Device",
+    "DeviceCollectionMembership",
     "LifecycleError",
     "MethodInvocationError",
     "NotFoundError",

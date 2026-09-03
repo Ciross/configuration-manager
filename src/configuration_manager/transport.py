@@ -82,6 +82,22 @@ class EntityKeyQuery:
         _validate_non_null_key(self.key)
 
 
+@dataclass(frozen=True, slots=True)
+class NavigationQuery:
+    """Request a collection navigation property from one keyed entity."""
+
+    surface: AdminServiceSurface
+    entity: str
+    key: JsonNonNullScalar
+    navigation: str
+    options: ODataQueryOptions = ODataQueryOptions()
+    continuation: _Continuation | None = None
+
+    def __post_init__(self) -> None:
+        """Reject a null root key even at untyped runtime boundaries."""
+        _validate_non_null_key(self.key)
+
+
 class MethodTarget(StrEnum):
     """The provider-level target kind for a named method."""
 
@@ -119,6 +135,8 @@ class ProviderTransport(Protocol):
     """
 
     def query_entities(self, request: EntityQuery) -> RawPage: ...
+
+    def query_navigation(self, request: NavigationQuery) -> RawPage | None: ...
 
     def get_entity(self, request: EntityKeyQuery) -> RawRecord | None: ...
 

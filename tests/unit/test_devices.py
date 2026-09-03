@@ -11,17 +11,24 @@ import pytest
 from configuration_manager import (
     ConfigManager,
     Device,
+    DeviceCollectionMembership,
     LifecycleError,
     NotFoundError,
     Page,
     QueryError,
 )
-from configuration_manager.resources.devices import _map_device
+from configuration_manager.resources.devices import (
+    _DeviceCollectionMembershipsContinuation,
+    _map_device,
+    _map_device_collection_membership,
+)
 from configuration_manager.transport import (
     AdminServiceSurface,
     EntityKeyQuery,
     EntityQuery,
     JsonValue,
+    NavigationQuery,
+    ODataQueryOptions,
     ProviderMethodCall,
     RawMethodResult,
     RawPage,
@@ -36,12 +43,20 @@ class FakeTransport:
         self.requests: list[EntityQuery] = []
         self.key_requests: list[EntityKeyQuery] = []
         self.entity: RawRecord | None = {"MachineId": 123, "Name": "PC001"}
+        self.navigation_pages: list[RawPage | None] = []
+        self.navigation_requests: list[NavigationQuery] = []
 
     def query_entities(self, request: EntityQuery) -> RawPage:
         self.requests.append(request)
         if self.pages:
             return self.pages.pop(0)
         return Page(({"MachineId": 123, "Name": "PC001"},))
+
+    def query_navigation(self, request: NavigationQuery) -> RawPage | None:
+        self.navigation_requests.append(request)
+        if self.navigation_pages:
+            return self.navigation_pages.pop(0)
+        return Page(({"Collection": {"SiteID": "SMS00001"}},))
 
     def get_entity(self, request: EntityKeyQuery) -> RawRecord | None:
         self.key_requests.append(request)
@@ -274,3 +289,169 @@ def test_retained_manager_respects_client_lifecycle() -> None:
         next(devices.iter())
     assert transport.requests == []
     assert transport.key_requests == []
+
+
+def test_membership_mapper_is_strict_frozen_and_ignores_unknown_fields() -> None:
+    membership = _map_device_collection_membership(
+        {
+            "Collection": {
+                "SiteID": "JA100014",
+                "CollectionID": 16777229,
+                "CollectionName": "All Servers",
+                "Flags": 4,
+                "IgnoredFutureProperty": "future",
+            },
+            "IgnoredMembershipProperty": 123,
+        },
+        16777260,
+    )
+    assert membership == DeviceCollectionMembership(16777260, "JA100014", "All Servers")
+    with pytest.raises(FrozenInstanceError):
+        membership.collection_id = "changed"  # type: ignore[misc]
+    assert not hasattr(membership, "__dict__")
+
+
+@pytest.mark.parametrize(
+    "record",
+    [
+        {},
+        {"Collection": None},
+        {"Collection": []},
+        {"Collection": "bad"},
+        {"Collection": {}},
+        {"Collection": {"SiteID": None}},
+        {"Collection": {"SiteID": ""}},
+        {"Collection": {"SiteID": "   "}},
+        {"Collection": {"SiteID": 1}},
+        {"Collection": {"SiteID": True}},
+        {"Collection": {"SiteID": 1.5}},
+        {"Collection": {"SiteID": []}},
+        {"Collection": {"SiteID": {}}},
+        {"Collection": {"SiteID": "SMS00001", "CollectionName": 1}},
+    ],
+)
+def test_invalid_membership_payload_is_rejected(record: RawRecord) -> None:
+    with pytest.raises(QueryError):
+        _map_device_collection_membership(record, 1)
+
+
+def test_collection_memberships_builds_exact_navigation_query() -> None:
+    transport = FakeTransport()
+    page = ConfigManager(transport=transport).devices.collection_memberships(
+        16777260, limit=10
+    )
+    assert page.items == (DeviceCollectionMembership(16777260, "SMS00001"),)
+    assert transport.navigation_requests == [
+        NavigationQuery(
+            AdminServiceSurface.V1,
+            "Device",
+            16777260,
+            "ResourceCollectionMembership",
+            ODataQueryOptions(select=("Collection",), expand=("Collection",), top=10),
+        )
+    ]
+
+
+def test_membership_mapper_accepts_null_live_collection_name() -> None:
+    assert _map_device_collection_membership(
+        {
+            "Collection": {
+                "SiteID": "SMS00001",
+                "CollectionName": None,
+                "CollectionID": 123,
+            }
+        },
+        16777260,
+    ) == DeviceCollectionMembership(16777260, "SMS00001")
+
+
+def test_membership_mapper_rejects_old_guessed_field_names() -> None:
+    with pytest.raises(QueryError, match="SiteID"):
+        _map_device_collection_membership(
+            {
+                "Collection": {
+                    "CollectionID": "SMS00001",
+                    "Name": "All Systems",
+                }
+            },
+            16777260,
+        )
+
+
+@pytest.mark.parametrize("value", [True, False, 0, -1, "1", 1.5])
+def test_invalid_membership_ids_are_rejected_without_request(value: object) -> None:
+    transport = FakeTransport()
+    with pytest.raises(ValueError):
+        ConfigManager(transport=transport).devices.collection_memberships(  # type: ignore[arg-type]
+            value  # type: ignore[arg-type]
+        )
+    assert transport.navigation_requests == []
+
+
+def test_membership_not_found_and_invalid_limit_do_not_leak_or_extra_query() -> None:
+    transport = FakeTransport()
+    transport.navigation_pages = [None]
+    with pytest.raises(NotFoundError, match="not visible"):
+        ConfigManager(transport=transport).devices.collection_memberships(123)
+    assert len(transport.navigation_requests) == 1
+    other = FakeTransport()
+    with pytest.raises(ValueError):
+        ConfigManager(transport=other).devices.collection_memberships(123, limit=True)
+    assert other.navigation_requests == []
+
+
+def test_membership_continuation_retains_device_and_rejects_other_pages() -> None:
+    continuation = _Continuation(object())
+    transport = FakeTransport()
+    transport.navigation_pages = [
+        Page[RawRecord]._from_transport(
+            ({"Collection": {"SiteID": "A"}},), continuation
+        ),
+        Page(({"Collection": {"SiteID": "B", "CollectionName": "Second"}},)),
+    ]
+    devices = ConfigManager(transport=transport).devices
+    first = devices.collection_memberships(42)
+    second = devices.next_collection_memberships_page(first)
+    assert second.items == (DeviceCollectionMembership(42, "B", "Second"),)
+    assert transport.navigation_requests[1].key == 42
+    assert transport.navigation_requests[1].continuation is continuation
+
+    other_transport = FakeTransport()
+    other = ConfigManager(transport=other_transport).devices
+    with pytest.raises(ValueError, match="originate"):
+        other.next_collection_memberships_page(first)
+    with pytest.raises(ValueError, match="no continuation"):
+        devices.next_collection_memberships_page(Page(second.items))
+    assert other_transport.navigation_requests == []
+
+
+def test_membership_iterator_is_lazy_and_closed_operations_do_no_io() -> None:
+    continuation = _Continuation(object())
+    transport = FakeTransport()
+    transport.navigation_pages = [
+        Page[RawRecord]._from_transport(
+            ({"Collection": {"SiteID": "A"}},), continuation
+        ),
+        Page(({"Collection": {"SiteID": "B"}},)),
+    ]
+    client = ConfigManager(transport=transport)
+    iterator = client.devices.iter_collection_memberships(99)
+    assert transport.navigation_requests == []
+    assert next(iterator) == DeviceCollectionMembership(99, "A")
+    assert len(transport.navigation_requests) == 1
+    assert next(iterator) == DeviceCollectionMembership(99, "B")
+    assert len(transport.navigation_requests) == 2
+    retained = client.devices
+    client.close()
+    with pytest.raises(LifecycleError):
+        retained.collection_memberships(99)
+    with pytest.raises(LifecycleError):
+        retained.next_collection_memberships_page(
+            Page[DeviceCollectionMembership]._from_transport(
+                (),
+                _DeviceCollectionMembershipsContinuation(
+                    retained, 99, _Continuation(object())
+                ),
+            )
+        )
+    assert len(transport.navigation_requests) == 2

@@ -28,6 +28,7 @@ from configuration_manager.transport import (
     EntityQuery,
     JsonValue,
     MethodTarget,
+    NavigationQuery,
     ODataQueryOptions,
     ProviderMethodCall,
     ProviderTransport,
@@ -47,6 +48,9 @@ class FakeTransport:
     def query_entities(self, request: EntityQuery) -> RawPage:
         self.calls.append("query")
         return Page(())
+
+    def query_navigation(self, request: NavigationQuery) -> RawPage | None:
+        raise AssertionError("not used")
 
     def get_entity(self, request: EntityKeyQuery) -> RawRecord | None:
         self.calls.append("get")
@@ -248,6 +252,7 @@ def test_public_exports_are_curated() -> None:
         "ConfigurationError",
         "ConfigurationManagerError",
         "Device",
+        "DeviceCollectionMembership",
         "LifecycleError",
         "MethodInvocationError",
         "NotFoundError",

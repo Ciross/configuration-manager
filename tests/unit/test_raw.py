@@ -11,6 +11,7 @@ from configuration_manager.transport import (
     AdminServiceSurface,
     EntityKeyQuery,
     EntityQuery,
+    NavigationQuery,
     ProviderMethodCall,
     RawMethodResult,
     RawPage,
@@ -28,6 +29,9 @@ class FakeTransport:
     def query_entities(self, request: EntityQuery) -> RawPage:
         self.requests.append(request)
         return Page(({"Name": "PC"},))
+
+    def query_navigation(self, request: NavigationQuery) -> RawPage | None:
+        raise AssertionError("not used")
 
     def get_entity(self, request: EntityKeyQuery) -> RawRecord | None:
         self.entity_requests.append(request)
