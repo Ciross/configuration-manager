@@ -25,6 +25,8 @@ from .transport import (
     AdminServiceSurface,
     EntityKeyQuery,
     EntityQuery,
+    NavigationQuery,
+    ODataQueryOptions,
     ProviderMethodCall,
     RawMethodResult,
     RawPage,
@@ -93,6 +95,64 @@ class _AdminServiceProviderTransport:
                 f"AdminService {description} query returned a malformed response"
             ) from error
         return self._parse_page(payload, request.surface)
+
+    def query_navigation(self, request: NavigationQuery) -> RawPage | None:
+        """Query one structurally described keyed navigation collection."""
+        description = self._surface_description(request.surface)
+        is_continuation = request.continuation is not None
+        try:
+            if request.continuation is not None:
+                state = request.continuation._value
+                if (
+                    not isinstance(state, _AdminServiceContinuation)
+                    or state.owner is not self._owner
+                ):
+                    raise ValueError("page continuation belongs to another transport")
+                if state.surface is not request.surface:
+                    raise ValueError("page continuation belongs to another surface")
+                payload = self._admin._get_json_url(state.url)
+            else:
+                self._validate_entity_name(request.entity)
+                self._validate_navigation_name(request.navigation)
+                literal = self._serialize_key(request.key)
+                root = quote(f"{request.entity}({literal})", safe="()'_-.")
+                path = f"{root}/{request.navigation}"
+                payload = self._admin.get_json(
+                    request.surface,
+                    path,
+                    params=self._query_params(request.options),
+                )
+        except _AdminServiceHTTPStatusError as error:
+            if error.status_code == 404 and not is_continuation:
+                return None
+            if 400 <= error.status_code < 500:
+                raise QueryError(
+                    f"AdminService {description} navigation query failed with HTTP "
+                    f"{error.status_code}"
+                ) from error
+            raise
+        except _AdminServiceResponseError as error:
+            raise QueryError(
+                f"AdminService {description} navigation query returned a malformed "
+                "response"
+            ) from error
+        return self._parse_page(payload, request.surface)
+
+    @staticmethod
+    def _query_params(options: ODataQueryOptions) -> dict[str, str]:
+        """Serialize the supported structural OData options deterministically."""
+        params: dict[str, str] = {}
+        if options.filter is not None:
+            params["$filter"] = options.filter
+        if options.select:
+            params["$select"] = ",".join(options.select)
+        if options.expand:
+            params["$expand"] = ",".join(options.expand)
+        if options.order_by:
+            params["$orderby"] = ",".join(options.order_by)
+        if options.top is not None:
+            params["$top"] = str(options.top)
+        return params
 
     def _parse_page(self, payload: object, surface: AdminServiceSurface) -> RawPage:
         description = self._surface_description(surface)
@@ -194,6 +254,13 @@ class _AdminServiceProviderTransport:
     def _validate_entity_name(entity: str) -> None:
         if _ENTITY_NAME.fullmatch(entity) is None:
             raise ValueError("entity must be a valid AdminService entity name")
+
+    @staticmethod
+    def _validate_navigation_name(navigation: str) -> None:
+        if _ENTITY_NAME.fullmatch(navigation) is None:
+            raise ValueError(
+                "navigation must be a valid AdminService navigation property name"
+            )
 
     @staticmethod
     def _serialize_key(key: bool | int | float | str) -> str:

@@ -78,6 +78,20 @@ The implemented high-level slices are `Device` / `Devices`, over
 `/AdminService/wmi/SMS_Collection`. Other conceptual resources remain subject
 to deliberate pre-1.0 refinement and ConfigMgr version availability.
 
+The implemented Device relationship routes are:
+
+```text
+Device
+  -> /AdminService/v1.0/Device
+  -> /AdminService/v1.0/Device(<id>)/ResourceCollectionMembership
+```
+
+Device collection membership is backed by the v1 navigation property.
+`DeviceCollectionMembership` is intentionally a relationship model. It does
+not reuse the WMI-backed `Collection` model because the expanded v1 relation
+and the WMI provider entity are distinct contracts with different required
+fields.
+
 ### Responsibilities and configuration
 
 `ConfigManager` is a composition root and lifecycle owner. It validates and

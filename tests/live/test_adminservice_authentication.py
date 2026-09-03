@@ -9,7 +9,13 @@ from datetime import datetime
 
 import pytest
 
-from configuration_manager import Collection, CollectionType, ConfigManager, Device
+from configuration_manager import (
+    Collection,
+    CollectionType,
+    ConfigManager,
+    Device,
+    DeviceCollectionMembership,
+)
 from configuration_manager.adminservice import (
     AdminService,
     windows_integrated_authentication,
@@ -202,3 +208,53 @@ def test_public_collections_get_visible_collection() -> None:
         collection = client.collections.get(collection_id)
     assert isinstance(collection, Collection)
     assert collection.id == collection_id
+
+
+@pytest.mark.live
+def test_public_device_collection_memberships() -> None:
+    """Validate the typed Device-to-Collection relationship."""
+    if sys.platform != "win32":
+        pytest.skip("Integrated Authentication validation requires Windows")
+    server = os.environ.get("CONFIGURATION_MANAGER_LIVE_SERVER")
+    if not server:
+        pytest.skip("CONFIGURATION_MANAGER_LIVE_SERVER is not configured")
+    with ConfigManager(server=server) as client:
+        devices = client.devices.list(limit=10).items
+        if not devices:
+            pytest.skip("the current identity has no visible devices")
+        for device in devices:
+            page = client.devices.collection_memberships(device.id, limit=1)
+            if page.items:
+                membership = page.items[0]
+                break
+        else:
+            pytest.skip("sampled devices have no visible collection memberships")
+    assert isinstance(membership, DeviceCollectionMembership)
+    assert membership.device_id == device.id
+    assert isinstance(membership.collection_id, str)
+    assert membership.collection_id.strip()
+    if membership.collection_name is not None:
+        assert isinstance(membership.collection_name, str)
+
+
+@pytest.mark.live
+def test_public_device_collection_membership_iterator() -> None:
+    """Validate lazy public traversal of the Device membership relationship."""
+    if sys.platform != "win32":
+        pytest.skip("Integrated Authentication validation requires Windows")
+    server = os.environ.get("CONFIGURATION_MANAGER_LIVE_SERVER")
+    if not server:
+        pytest.skip("CONFIGURATION_MANAGER_LIVE_SERVER is not configured")
+    with ConfigManager(server=server) as client:
+        devices = client.devices.list(limit=10).items
+        if not devices:
+            pytest.skip("the current identity has no visible devices")
+        for device in devices:
+            iterator = client.devices.iter_collection_memberships(device.id)
+            item = next(iterator, None)
+            if item is not None:
+                break
+        else:
+            pytest.skip("sampled devices have no visible collection memberships")
+    assert isinstance(item, DeviceCollectionMembership)
+    assert item.device_id == device.id

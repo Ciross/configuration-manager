@@ -92,6 +92,21 @@ prove global nonexistence because ConfigMgr RBAC remains authoritative.
 Advanced OData querying and unknown v1 fields remain available through
 `client.raw.v1`.
 
+Device-to-Collection membership is exposed as a distinct, immutable
+`DeviceCollectionMembership` relationship model backed by the documented v1
+navigation property:
+
+```python
+with ConfigManager(server="cm01.contoso.com") as client:
+    memberships = client.devices.collection_memberships(16777260)
+
+    for membership in memberships.items:
+        print(membership.collection_id, membership.collection_name)
+```
+
+Use `next_collection_memberships_page()` for explicit pagination or
+`iter_collection_memberships()` to traverse server continuations lazily.
+
 ### Typed collections
 
 The second high-level resource maps the WMI `SMS_Collection` entity to an

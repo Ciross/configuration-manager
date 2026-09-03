@@ -6,7 +6,13 @@
 import httpx2
 import pytest
 
-from configuration_manager import ConfigManager, Device, NotFoundError, QueryError
+from configuration_manager import (
+    ConfigManager,
+    Device,
+    DeviceCollectionMembership,
+    NotFoundError,
+    QueryError,
+)
 from configuration_manager.adminservice import AdminService
 from configuration_manager.adminservice_transport import _AdminServiceProviderTransport
 
@@ -121,3 +127,88 @@ def test_malformed_known_field_becomes_query_error(record: object) -> None:
     )
     with pytest.raises(QueryError):
         client.devices.list()
+
+
+@pytest.mark.integration
+def test_typed_membership_uses_exact_navigation_route_and_options() -> None:
+    requests: list[httpx2.Request] = []
+
+    def respond(request: httpx2.Request) -> httpx2.Response:
+        requests.append(request)
+        return httpx2.Response(
+            200,
+            json={
+                "@odata.context": "ignored",
+                "value": [
+                    {
+                        "Collection": {
+                            "CollectionID": "SMS00001",
+                            "Name": "All Systems",
+                            "IgnoredFutureProperty": "future",
+                        },
+                        "IgnoredMembershipProperty": 123,
+                    }
+                ],
+            },
+        )
+
+    with client_with(httpx2.MockTransport(respond)) as client:
+        page = client.devices.collection_memberships(16777260, limit=1)
+    assert page.items == (
+        DeviceCollectionMembership(16777260, "SMS00001", "All Systems"),
+    )
+    assert requests[0].url.path == (
+        "/AdminService/v1.0/Device(16777260)/ResourceCollectionMembership"
+    )
+    assert dict(requests[0].url.params) == {
+        "$select": "Collection",
+        "$expand": "Collection",
+        "$top": "1",
+    }
+
+
+@pytest.mark.integration
+def test_membership_404_and_malformed_relationship_are_typed_errors() -> None:
+    missing = client_with(httpx2.MockTransport(lambda _request: httpx2.Response(404)))
+    with pytest.raises(NotFoundError, match="not visible"):
+        missing.devices.collection_memberships(123)
+
+    for record in ({"Collection": None}, {"Collection": {"CollectionID": " "}}):
+        malformed = client_with(
+            httpx2.MockTransport(
+                lambda _request, record=record: httpx2.Response(
+                    200, json={"value": [record]}
+                )
+            )
+        )
+        with pytest.raises(QueryError):
+            malformed.devices.collection_memberships(123)
+
+
+@pytest.mark.integration
+def test_membership_continuation_replays_server_url_unchanged() -> None:
+    requests: list[httpx2.Request] = []
+
+    def respond(request: httpx2.Request) -> httpx2.Response:
+        requests.append(request)
+        if len(requests) == 1:
+            return httpx2.Response(
+                200,
+                json={
+                    "value": [{"Collection": {"CollectionID": "A"}}],
+                    "@odata.nextLink": (
+                        "/AdminService/v1.0/Device(7)/ResourceCollectionMembership"
+                        "?$skiptoken=A%2FB%3D"
+                    ),
+                },
+            )
+        return httpx2.Response(
+            200, json={"value": [{"Collection": {"CollectionID": "B"}}]}
+        )
+
+    client = client_with(httpx2.MockTransport(respond))
+    second = client.devices.next_collection_memberships_page(
+        client.devices.collection_memberships(7)
+    )
+    assert second.items == (DeviceCollectionMembership(7, "B"),)
+    assert requests[1].url.query == b"$skiptoken=A%2FB%3D"
