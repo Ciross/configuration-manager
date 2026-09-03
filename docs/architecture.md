@@ -73,9 +73,10 @@ with ConfigManager(server="cm01.contoso.com") as client:
     )
 ```
 
-`Device` / `Devices` is the first implemented high-level slice, over
-`/AdminService/v1.0/Device`. Other conceptual resources remain subject to
-deliberate pre-1.0 refinement and ConfigMgr version availability.
+The implemented high-level slices are `Device` / `Devices`, over
+`/AdminService/v1.0/Device`, and `Collection` / `Collections`, over
+`/AdminService/wmi/SMS_Collection`. Other conceptual resources remain subject
+to deliberate pre-1.0 refinement and ConfigMgr version availability.
 
 ### Responsibilities and configuration
 
@@ -384,6 +385,15 @@ High-level Device pages wrap the provider's
 opaque continuation in manager-bound resource state, so callers cannot see or
 replay AdminService next-links across clients.
 
+`Collection` / `Collections` is the second implemented boundary. A raw
+`SMS_Collection` record from `/AdminService/wmi/SMS_Collection` passes through
+an explicit mapper to the immutable `Collection` model. Its documented known
+fields are validated, unknown fields remain available through `raw.wmi`, and
+its opaque pagination is wrapped in Collection-specific, manager-bound state.
+Together, `Device -> /AdminService/v1.0/Device` and
+`Collection -> /AdminService/wmi/SMS_Collection` validate that high-level
+resource contracts are independent of a particular AdminService surface.
+
 Terminology is capability-specific:
 
 - `get(...)` returns exactly one model or raises a not-found/ambiguity error;
@@ -557,10 +567,11 @@ architecture validation. A realistic read-only v0.1 is:
    in a lab**, plus OData filter/select and one-page/continuation handling.
 4. `raw.v1` metadata/query/get for proven entities, without pretending parity
    with `/wmi/`.
-5. One vertical high-level read-only slice, now implemented: `Device`, `Devices`,
-   and typed pagination over `/AdminService/v1.0/Device`.
+5. Two vertical high-level read-only slices, now implemented: `Device` over
+   `/AdminService/v1.0/Device` and `Collection` over
+   `/AdminService/wmi/SMS_Collection`, each with typed pagination.
 
-Users, collections, and applications follow in later 0.x milestones after the
+Users and applications follow in later 0.x milestones after the
 vertical slice validates mapping, RBAC, version variance, and pagination.
 Provider-wide class modeling, direct WMI, mutations, deployment actions,
 application creation, task-sequence changes, and software-update orchestration

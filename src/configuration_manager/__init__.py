@@ -17,13 +17,15 @@ from .exceptions import (
     TransportError,
     TransportTimeoutError,
 )
-from .models import Device
+from .models import Collection, CollectionType, Device
 from .pagination import Page
 
 __all__ = (
     "AmbiguousResultError",
     "AuthenticationError",
     "AuthorizationError",
+    "Collection",
+    "CollectionType",
     "ConfigManager",
     "ConfigurationError",
     "ConfigurationManagerError",

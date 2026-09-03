@@ -2,7 +2,8 @@
 
 > [!IMPORTANT]
 > This project is in **very early development**. It provides typed configuration,
-> lifecycle, a typed read-only Device API, and raw AdminService query surfaces.
+> lifecycle, typed read-only Device and Collection APIs, and raw AdminService
+> query surfaces.
 
 `configuration-manager` is intended to become a strongly typed Python SDK for
 Microsoft Configuration Manager (ConfigMgr, formerly SCCM and MECM). It will
@@ -19,7 +20,7 @@ underlying capabilities without weakening the high-level abstractions.
 
 ## Intended architecture
 
-The Device branch is implemented; the other resource branches remain direction:
+The Device and Collection branches are implemented; the others remain direction:
 
 ```text
 High-level API
@@ -90,6 +91,35 @@ Missing or RBAC-invisible keyed devices raise `NotFoundError`; this does not
 prove global nonexistence because ConfigMgr RBAC remains authoritative.
 Advanced OData querying and unknown v1 fields remain available through
 `client.raw.v1`.
+
+### Typed collections
+
+The second high-level resource maps the WMI `SMS_Collection` entity to an
+immutable, slotted `Collection` model. `CollectionType` exposes the documented
+`OTHER`, `USER`, and `DEVICE` values.
+
+```python
+from configuration_manager import ConfigManager
+
+with ConfigManager(server="cm01.contoso.com") as client:
+    page = client.collections.list(limit=10)
+
+    for collection in page.items:
+        print(collection.id, collection.name, collection.collection_type)
+
+    collection = client.collections.get("SMS00001")
+```
+
+The initial fields are `id`, `name`, `collection_type`, `member_count`,
+`limiting_collection_id`, `limiting_collection_name`, and `is_builtin`.
+Collections use `/AdminService/wmi/SMS_Collection`, while Devices use
+`/AdminService/v1.0/Device`; both follow the same high-level conventions.
+`collections.list()` returns one `Page[Collection]`. Its `limit` maps to `$top`,
+a result cap rather than a requested page size, and `collections.iter()` lazily
+follows opaque server pagination. `collections.get(id)` performs one keyed
+provider lookup; missing or RBAC-invisible objects raise `NotFoundError`, without
+claiming global nonexistence. ConfigMgr RBAC remains authoritative. Advanced
+filtering and unknown WMI properties remain available through `client.raw.wmi`.
 
 ### Raw provider access
 

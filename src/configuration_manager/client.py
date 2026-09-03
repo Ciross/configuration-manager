@@ -12,7 +12,7 @@ from .adminservice_transport import _AdminServiceProviderTransport
 from .config import ConfigManagerConfig
 from .exceptions import ConfigurationError, LifecycleError
 from .raw import Raw
-from .resources import Devices
+from .resources import Collections, Devices
 from .transport import ProviderTransport
 
 
@@ -23,7 +23,15 @@ class ConfigManager:
     of injected transports.
     """
 
-    __slots__ = ("_closed", "_config", "_own_transport", "_transport", "devices", "raw")
+    __slots__ = (
+        "_closed",
+        "_config",
+        "_own_transport",
+        "_transport",
+        "collections",
+        "devices",
+        "raw",
+    )
 
     def __init__(
         self,
@@ -60,6 +68,7 @@ class ConfigManager:
         self._closed = False
         self.raw = Raw(self)
         self.devices = Devices(self)
+        self.collections = Collections(self)
 
     def _provider_transport(self) -> ProviderTransport:
         self._require_open()
