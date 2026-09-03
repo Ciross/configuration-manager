@@ -1,7 +1,7 @@
 # Releasing
 
 Releases are prepared and verified manually. Release automation, publishing,
-signing, and version bumping are intentionally outside this process.
+and signing are intentionally outside this process.
 
 ## Build and verify
 
