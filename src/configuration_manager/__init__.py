@@ -23,6 +23,7 @@ from .models import (
     CollectionType,
     Device,
     DeviceCollectionMembership,
+    User,
 )
 from .pagination import Page
 
@@ -48,4 +49,5 @@ __all__ = (
     "TransportConnectionError",
     "TransportError",
     "TransportTimeoutError",
+    "User",
 )

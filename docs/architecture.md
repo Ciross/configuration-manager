@@ -74,9 +74,14 @@ with ConfigManager(server="cm01.contoso.com") as client:
 ```
 
 The implemented high-level slices are `Device` / `Devices`, over
-`/AdminService/v1.0/Device`, and `Collection` / `Collections`, over
-`/AdminService/wmi/SMS_Collection`. Other conceptual resources remain subject
-to deliberate pre-1.0 refinement and ConfigMgr version availability.
+`/AdminService/v1.0/Device`, `Collection` / `Collections`, over
+`/AdminService/wmi/SMS_Collection`, and `User` / `Users`, over
+`/AdminService/wmi/SMS_R_User`. Devices are currently v1-backed, while
+Collections and Users are WMI-backed. Those surfaces are implementation and
+provider details hidden by the high-level resource APIs: resource models use
+explicit provider-specific mappings while their public conventions remain
+surface-independent. Other conceptual resources remain subject to deliberate
+pre-1.0 refinement and ConfigMgr version availability.
 
 The implemented Device relationship routes are:
 

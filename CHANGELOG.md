@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- Typed read-only User resource queries.
+
 ## 0.2.0 - 2026-09-03
 
 ### Added
