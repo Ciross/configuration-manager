@@ -60,8 +60,20 @@ def test_list_and_get_use_wmi_user_routes_and_return_typed_values() -> None:
     assert page.items == (expected,)
     assert fetched == expected
     assert requests[0].url.path == "/AdminService/wmi/SMS_R_User"
-    assert dict(requests[0].url.params) == {"$top": "1"}
+    assert dict(requests[0].url.params) == {
+        "$select": (
+            "ResourceId,Name,UniqueUserName,UserName,FullUserName,Mail,"
+            "WindowsNTDomain,SID,DistinguishedName"
+        ),
+        "$top": "1",
+    }
     assert requests[1].url.path == "/AdminService/wmi/SMS_R_User(2063597568)"
+    assert dict(requests[1].url.params) == {
+        "$select": (
+            "ResourceId,Name,UniqueUserName,UserName,FullUserName,Mail,"
+            "WindowsNTDomain,SID,DistinguishedName"
+        )
+    }
 
 
 @pytest.mark.integration

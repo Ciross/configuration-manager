@@ -141,11 +141,43 @@ def test_list_and_get_send_exact_wmi_queries() -> None:
     assert client.users.get(2063597568) == User(1)
     assert transport.requests == [
         EntityQuery(
-            AdminServiceSurface.WMI, "SMS_R_User", options=ODataQueryOptions(top=10)
+            surface=AdminServiceSurface.WMI,
+            entity="SMS_R_User",
+            options=ODataQueryOptions(
+                select=(
+                    "ResourceId",
+                    "Name",
+                    "UniqueUserName",
+                    "UserName",
+                    "FullUserName",
+                    "Mail",
+                    "WindowsNTDomain",
+                    "SID",
+                    "DistinguishedName",
+                ),
+                top=10,
+            ),
         )
     ]
     assert transport.key_requests == [
-        EntityKeyQuery(AdminServiceSurface.WMI, "SMS_R_User", 2063597568)
+        EntityKeyQuery(
+            surface=AdminServiceSurface.WMI,
+            entity="SMS_R_User",
+            key=2063597568,
+            options=ODataQueryOptions(
+                select=(
+                    "ResourceId",
+                    "Name",
+                    "UniqueUserName",
+                    "UserName",
+                    "FullUserName",
+                    "Mail",
+                    "WindowsNTDomain",
+                    "SID",
+                    "DistinguishedName",
+                ),
+            ),
+        )
     ]
 
 
