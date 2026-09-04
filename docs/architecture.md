@@ -132,6 +132,22 @@ metadata require a caller-controlled Collection lookup. This differs from the
 Device-to-Collection relationship, whose v1 navigation payload already
 contains expanded Collection metadata.
 
+The reciprocal Collection-to-User relationship is:
+
+```text
+Collection
+  -> /AdminService/wmi/SMS_Collection
+  -> /AdminService/wmi/SMS_FullCollectionMembership
+       filter CollectionID eq '<collection-id>' and ResourceType eq 4
+       select CollectionID, ResourceID, ResourceType, Name
+```
+
+`user_members()` resolves the root Collection first and requires
+`CollectionType.USER`. It filters `ResourceType == 4` at the provider and also
+validates that value while mapping, intentionally excluding User Groups. No
+hidden User lookup or enrichment occurs: `ResourceID` maps directly to
+`user_id`, and the membership record's `Name` maps directly to `user_name`.
+
 ### Responsibilities and configuration
 
 `ConfigManager` is a composition root and lifecycle owner. It validates and

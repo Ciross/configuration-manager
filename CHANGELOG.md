@@ -6,6 +6,7 @@
 
 - Typed read-only User resource queries.
 - Typed read-only User-to-Collection membership queries.
+- Typed read-only Collection-to-User member queries.
 
 ## 0.2.0 - 2026-09-03
 

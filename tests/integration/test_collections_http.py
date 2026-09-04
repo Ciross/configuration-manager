@@ -9,6 +9,7 @@ from configuration_manager import (
     Collection,
     CollectionDeviceMember,
     CollectionType,
+    CollectionUserMember,
     ConfigManager,
     NotFoundError,
     QueryError,
@@ -205,3 +206,123 @@ def test_device_member_continuation_replays_server_url_without_collection_lookup
     assert len(requests) == 3
     assert requests[2].url.path == "/AdminService/wmi/SMS_FullCollectionMembership"
     assert requests[2].url.query == b"$skiptoken=opaque%2Bvalue"
+
+
+def user_collection_record() -> dict[str, object]:
+    return {"CollectionID": "SMS00002", "Name": "All Users", "CollectionType": 1}
+
+
+def user_member_record(**changes: object) -> dict[str, object]:
+    value: dict[str, object] = {
+        "CollectionID": "SMS00002",
+        "ResourceID": 2063597568,
+        "ResourceType": 4,
+        "Name": r"EU\svc-SDAutomation (svc-SDAutomation)",
+    }
+    value.update(changes)
+    return value
+
+
+@pytest.mark.integration
+def test_user_members_use_validated_root_and_exact_filtered_projection() -> None:
+    requests: list[httpx2.Request] = []
+
+    def respond(request: httpx2.Request) -> httpx2.Response:
+        requests.append(request)
+        payload = (
+            user_collection_record()
+            if len(requests) == 1
+            else {"value": [user_member_record()]}
+        )
+        return httpx2.Response(200, json=payload)
+
+    with client_with(httpx2.MockTransport(respond)) as client:
+        page = client.collections.user_members("SMS00002", limit=1)
+    assert page.items == (
+        CollectionUserMember(
+            "SMS00002", 2063597568, r"EU\svc-SDAutomation (svc-SDAutomation)"
+        ),
+    )
+    assert requests[0].url.path == "/AdminService/wmi/SMS_Collection('SMS00002')"
+    assert requests[1].url.path == "/AdminService/wmi/SMS_FullCollectionMembership"
+    assert dict(requests[1].url.params) == {
+        "$filter": "CollectionID eq 'SMS00002' and ResourceType eq 4",
+        "$select": "CollectionID,ResourceID,ResourceType,Name",
+        "$top": "1",
+    }
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("status_or_type", [404, 2])
+def test_invalid_user_collection_stops_before_membership_query(
+    status_or_type: int,
+) -> None:
+    requests: list[httpx2.Request] = []
+
+    def respond(request: httpx2.Request) -> httpx2.Response:
+        requests.append(request)
+        if status_or_type == 404:
+            return httpx2.Response(404)
+        return httpx2.Response(
+            200, json={"CollectionID": "SMS00002", "CollectionType": status_or_type}
+        )
+
+    client = client_with(httpx2.MockTransport(respond))
+    expected = NotFoundError if status_or_type == 404 else ValueError
+    with pytest.raises(expected):
+        client.collections.user_members("SMS00002")
+    assert len(requests) == 1
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"CollectionID": "OTHER"},
+        {"ResourceID": 0},
+        {"ResourceType": 3},
+        {"Name": 1},
+    ],
+)
+def test_malformed_user_membership_is_rejected(changes: dict[str, object]) -> None:
+    calls = 0
+
+    def respond(_request: httpx2.Request) -> httpx2.Response:
+        nonlocal calls
+        calls += 1
+        payload = (
+            user_collection_record()
+            if calls == 1
+            else {"value": [user_member_record(**changes)]}
+        )
+        return httpx2.Response(200, json=payload)
+
+    client = client_with(httpx2.MockTransport(respond))
+    with pytest.raises(QueryError):
+        client.collections.user_members("SMS00002")
+
+
+@pytest.mark.integration
+def test_user_member_continuation_replays_exact_server_url_without_root_lookup() -> (
+    None
+):
+    requests: list[httpx2.Request] = []
+
+    def respond(request: httpx2.Request) -> httpx2.Response:
+        requests.append(request)
+        if len(requests) == 1:
+            return httpx2.Response(200, json=user_collection_record())
+        payload: dict[str, object] = {"value": [user_member_record()]}
+        if len(requests) == 2:
+            payload["@odata.nextLink"] = (
+                "https://cm01.contoso.com/AdminService/wmi/"
+                "SMS_FullCollectionMembership?$skiptoken=user%2Bopaque"
+            )
+        return httpx2.Response(200, json=payload)
+
+    with client_with(httpx2.MockTransport(respond)) as client:
+        first = client.collections.user_members("SMS00002", limit=1)
+        second = client.collections.next_user_members_page(first)
+    assert second.items[0].collection_id == "SMS00002"
+    assert len(requests) == 3
+    assert requests[2].url.query == b"$skiptoken=user%2Bopaque"

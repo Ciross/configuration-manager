@@ -13,6 +13,7 @@ from configuration_manager import (
     Collection,
     CollectionDeviceMember,
     CollectionType,
+    CollectionUserMember,
     ConfigManager,
     Device,
     DeviceCollectionMembership,
@@ -320,6 +321,53 @@ def test_public_collection_device_member_iterator() -> None:
     assert isinstance(member, CollectionDeviceMember)
     assert member.collection_id == collection.id
     assert member.device_id > 0
+
+
+@pytest.mark.live
+def test_public_collection_user_members() -> None:
+    """Validate typed Collection-to-User member queries."""
+    if sys.platform != "win32":
+        pytest.skip("Integrated Authentication validation requires Windows")
+    server = os.environ.get("CONFIGURATION_MANAGER_LIVE_SERVER")
+    if not server:
+        pytest.skip("CONFIGURATION_MANAGER_LIVE_SERVER is not configured")
+    with ConfigManager(server=server) as client:
+        for collection in client.collections.iter():
+            if collection.collection_type is not CollectionType.USER:
+                continue
+            page = client.collections.user_members(collection.id, limit=5)
+            if page.items:
+                member = page.items[0]
+                break
+        else:
+            pytest.skip("visible User collections have no visible User members")
+    assert isinstance(member, CollectionUserMember)
+    assert member.collection_id == collection.id
+    assert isinstance(member.user_id, int) and not isinstance(member.user_id, bool)
+    assert member.user_id > 0
+    assert member.user_name is None or isinstance(member.user_name, str)
+
+
+@pytest.mark.live
+def test_public_collection_user_member_iterator() -> None:
+    """Validate lazy Collection-to-User traversal without exhausting pages."""
+    if sys.platform != "win32":
+        pytest.skip("Integrated Authentication validation requires Windows")
+    server = os.environ.get("CONFIGURATION_MANAGER_LIVE_SERVER")
+    if not server:
+        pytest.skip("CONFIGURATION_MANAGER_LIVE_SERVER is not configured")
+    with ConfigManager(server=server) as client:
+        for collection in client.collections.iter():
+            if collection.collection_type is not CollectionType.USER:
+                continue
+            member = next(client.collections.iter_user_members(collection.id), None)
+            if member is not None:
+                break
+        else:
+            pytest.skip("visible User collections have no visible User members")
+    assert isinstance(member, CollectionUserMember)
+    assert member.collection_id == collection.id
+    assert member.user_id > 0
 
 
 @pytest.mark.live
