@@ -25,6 +25,19 @@ if TYPE_CHECKING:
     from ..client import ConfigManager
 
 
+_USER_SELECT = (
+    "ResourceId",
+    "Name",
+    "UniqueUserName",
+    "UserName",
+    "FullUserName",
+    "Mail",
+    "WindowsNTDomain",
+    "SID",
+    "DistinguishedName",
+)
+
+
 @dataclass(frozen=True, slots=True)
 class _UsersContinuation:
     owner: object
@@ -83,7 +96,7 @@ class Users:
                 EntityQuery(
                     surface=AdminServiceSurface.WMI,
                     entity="SMS_R_User",
-                    options=ODataQueryOptions(top=limit),
+                    options=ODataQueryOptions(select=_USER_SELECT, top=limit),
                 )
             )
         )
@@ -94,7 +107,12 @@ class Users:
             raise ValueError("id must be a positive integer")
         transport = self._client._provider_transport()
         record = transport.get_entity(
-            EntityKeyQuery(AdminServiceSurface.WMI, "SMS_R_User", id)
+            EntityKeyQuery(
+                surface=AdminServiceSurface.WMI,
+                entity="SMS_R_User",
+                key=id,
+                options=ODataQueryOptions(select=_USER_SELECT),
+            )
         )
         if record is None:
             raise NotFoundError(

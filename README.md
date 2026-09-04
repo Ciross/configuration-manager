@@ -124,6 +124,8 @@ with ConfigManager(server="cm01.contoso.com") as client:
 
 Use `client.users.next_page(page)` for explicit pagination or
 `client.users.iter()` for lazy traversal across server-controlled pages.
+The typed resource projects only fields represented by the public `User` model;
+use `client.raw.wmi` when arbitrary `SMS_R_User` fields are needed.
 
 ### Typed collections
 
