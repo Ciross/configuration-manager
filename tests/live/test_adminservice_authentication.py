@@ -16,6 +16,7 @@ from configuration_manager import (
     ConfigManager,
     Device,
     DeviceCollectionMembership,
+    User,
 )
 from configuration_manager.adminservice import (
     AdminService,
@@ -318,3 +319,50 @@ def test_public_collection_device_member_iterator() -> None:
     assert isinstance(member, CollectionDeviceMember)
     assert member.collection_id == collection.id
     assert member.device_id > 0
+
+
+@pytest.mark.live
+def test_public_users_list() -> None:
+    """Validate the typed User WMI boundary and its strict wire mapping."""
+    if sys.platform != "win32":
+        pytest.skip("Integrated Authentication validation requires Windows")
+    server = os.environ.get("CONFIGURATION_MANAGER_LIVE_SERVER")
+    if not server:
+        pytest.skip("CONFIGURATION_MANAGER_LIVE_SERVER is not configured")
+    with ConfigManager(server=server) as client:
+        page = client.users.list(limit=10)
+    if not page.items:
+        pytest.skip("the current identity has no visible users")
+    for user in page.items:
+        assert isinstance(user, User)
+        assert isinstance(user.id, int) and not isinstance(user.id, bool)
+        assert user.id > 0
+        for value in (
+            user.name,
+            user.unique_username,
+            user.username,
+            user.full_name,
+            user.email,
+            user.domain,
+            user.sid,
+            user.distinguished_name,
+        ):
+            assert value is None or isinstance(value, str)
+
+
+@pytest.mark.live
+def test_public_users_get_visible_user() -> None:
+    """Validate typed keyed lookup using a visible user resource ID."""
+    if sys.platform != "win32":
+        pytest.skip("Integrated Authentication validation requires Windows")
+    server = os.environ.get("CONFIGURATION_MANAGER_LIVE_SERVER")
+    if not server:
+        pytest.skip("CONFIGURATION_MANAGER_LIVE_SERVER is not configured")
+    with ConfigManager(server=server) as client:
+        page = client.users.list(limit=10)
+        if not page.items:
+            pytest.skip("the current identity has no visible users")
+        user = page.items[0]
+        fetched = client.users.get(user.id)
+    assert isinstance(fetched, User)
+    assert fetched.id == user.id

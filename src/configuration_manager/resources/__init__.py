@@ -2,5 +2,6 @@
 
 from .collections import Collections
 from .devices import Devices
+from .users import Users
 
-__all__ = ("Collections", "Devices")
+__all__ = ("Collections", "Devices", "Users")

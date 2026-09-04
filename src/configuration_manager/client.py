@@ -12,7 +12,7 @@ from .adminservice_transport import _AdminServiceProviderTransport
 from .config import ConfigManagerConfig
 from .exceptions import ConfigurationError, LifecycleError
 from .raw import Raw
-from .resources import Collections, Devices
+from .resources import Collections, Devices, Users
 from .transport import ProviderTransport
 
 
@@ -31,6 +31,7 @@ class ConfigManager:
         "collections",
         "devices",
         "raw",
+        "users",
     )
 
     def __init__(
@@ -69,6 +70,7 @@ class ConfigManager:
         self.raw = Raw(self)
         self.devices = Devices(self)
         self.collections = Collections(self)
+        self.users = Users(self)
 
     def _provider_transport(self) -> ProviderTransport:
         self._require_open()

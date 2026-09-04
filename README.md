@@ -2,7 +2,7 @@
 
 > [!IMPORTANT]
 > This project is in **very early development**. It provides typed configuration,
-> lifecycle, typed read-only Device and Collection APIs, and raw AdminService
+> lifecycle, typed read-only Device, Collection, and User APIs, and raw AdminService
 > query surfaces.
 
 `configuration-manager` is intended to become a strongly typed Python SDK for
@@ -106,6 +106,26 @@ with ConfigManager(server="cm01.contoso.com") as client:
 
 Use `next_collection_memberships_page()` for explicit pagination or
 `iter_collection_memberships()` to traverse server continuations lazily.
+
+### Typed users
+
+Users are immutable, slotted values backed by the AdminService WMI
+`SMS_R_User` entity:
+
+```python
+from configuration_manager import ConfigManager
+
+with ConfigManager(server="cm01.contoso.com") as client:
+    users = client.users.list(limit=10)
+    for user in users.items:
+        print(user.id, user.unique_username, user.full_name)
+    user = client.users.get(2063597568)
+```
+
+Use `client.users.next_page(page)` for explicit pagination or
+`client.users.iter()` for lazy traversal across server-controlled pages.
+The typed resource projects only fields represented by the public `User` model;
+use `client.raw.wmi` when arbitrary `SMS_R_User` fields are needed.
 
 ### Typed collections
 
