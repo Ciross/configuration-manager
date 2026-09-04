@@ -5,6 +5,7 @@
 ### Added
 
 - Typed read-only User resource queries.
+- Typed read-only User-to-Collection membership queries.
 
 ## 0.2.0 - 2026-09-03
 

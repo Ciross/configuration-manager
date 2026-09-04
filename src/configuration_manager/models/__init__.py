@@ -5,6 +5,7 @@ from .collection_device_member import CollectionDeviceMember
 from .device import Device
 from .device_collection_membership import DeviceCollectionMembership
 from .user import User
+from .user_collection_membership import UserCollectionMembership
 
 __all__ = (
     "Collection",
@@ -13,4 +14,5 @@ __all__ = (
     "Device",
     "DeviceCollectionMembership",
     "User",
+    "UserCollectionMembership",
 )

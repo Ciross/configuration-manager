@@ -115,6 +115,23 @@ contracts. `device_members()` resolves the root collection first and requires a
 Device collection, preventing User collection members from being silently
 reinterpreted as devices.
 
+User-to-Collection membership uses the WMI route and projects only the fields
+shown here:
+
+```text
+User
+  -> /AdminService/wmi/SMS_FullCollectionMembership
+       filter ResourceID eq <User.id>
+       select CollectionID, ResourceID, ResourceType
+```
+
+The relationship mapper requires `ResourceType == 4` and verifies that
+`ResourceID` matches the requested User. It does not perform hidden Collection
+enrichment: only Collection IDs are exposed, and names or other Collection
+metadata require a caller-controlled Collection lookup. This differs from the
+Device-to-Collection relationship, whose v1 navigation payload already
+contains expanded Collection metadata.
+
 ### Responsibilities and configuration
 
 `ConfigManager` is a composition root and lifecycle owner. It validates and

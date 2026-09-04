@@ -5,7 +5,13 @@
 import httpx2
 import pytest
 
-from configuration_manager import ConfigManager, NotFoundError, QueryError, User
+from configuration_manager import (
+    ConfigManager,
+    NotFoundError,
+    QueryError,
+    User,
+    UserCollectionMembership,
+)
 from configuration_manager.adminservice import AdminService
 from configuration_manager.adminservice_transport import _AdminServiceProviderTransport
 
@@ -112,3 +118,111 @@ def test_continuation_is_replayed_exactly_without_reconstructing_top() -> None:
         assert first.has_next
         client.users.next_page(first)
     assert urls[1] == next_url
+
+
+@pytest.mark.integration
+def test_user_collection_membership_request_sequence_and_mapping() -> None:
+    requests: list[httpx2.Request] = []
+
+    def respond(request: httpx2.Request) -> httpx2.Response:
+        requests.append(request)
+        if request.url.path.startswith("/AdminService/wmi/SMS_R_User("):
+            return httpx2.Response(200, json=RECORD)
+        return httpx2.Response(
+            200,
+            json={
+                "value": [
+                    {
+                        "CollectionID": "SMS00002",
+                        "ResourceID": 2063597568,
+                        "ResourceType": 4,
+                        "Name": r"EU\svc-SDAutomation (svc-SDAutomation)",
+                    }
+                ]
+            },
+        )
+
+    with client_with(httpx2.MockTransport(respond)) as client:
+        page = client.users.collection_memberships(2063597568, limit=1)
+    assert page.items == (UserCollectionMembership(2063597568, "SMS00002"),)
+    assert requests[0].url.path == "/AdminService/wmi/SMS_R_User(2063597568)"
+    assert requests[1].url.path == "/AdminService/wmi/SMS_FullCollectionMembership"
+    assert dict(requests[1].url.params) == {
+        "$filter": "ResourceID eq 2063597568",
+        "$select": "CollectionID,ResourceID,ResourceType",
+        "$top": "1",
+    }
+
+
+@pytest.mark.integration
+def test_missing_user_prevents_membership_http_request() -> None:
+    paths: list[str] = []
+
+    def respond(request: httpx2.Request) -> httpx2.Response:
+        paths.append(request.url.path)
+        return httpx2.Response(404)
+
+    with (
+        client_with(httpx2.MockTransport(respond)) as client,
+        pytest.raises(NotFoundError),
+    ):
+        client.users.collection_memberships(2063597568)
+    assert paths == ["/AdminService/wmi/SMS_R_User(2063597568)"]
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    "override", [{"ResourceID": 1}, {"CollectionID": " "}, {"ResourceType": 3}]
+)
+def test_malformed_user_membership_is_query_error(override: dict[str, object]) -> None:
+    def respond(request: httpx2.Request) -> httpx2.Response:
+        if request.url.path.startswith("/AdminService/wmi/SMS_R_User("):
+            return httpx2.Response(200, json=RECORD)
+        membership: dict[str, object] = {
+            "CollectionID": "SMS00002",
+            "ResourceID": 2063597568,
+            "ResourceType": 4,
+        }
+        membership.update(override)
+        return httpx2.Response(200, json={"value": [membership]})
+
+    with (
+        client_with(httpx2.MockTransport(respond)) as client,
+        pytest.raises(QueryError),
+    ):
+        client.users.collection_memberships(2063597568)
+
+
+@pytest.mark.integration
+def test_user_membership_continuation_is_replayed_without_root_lookup() -> None:
+    urls: list[str] = []
+    next_url = (
+        "https://cm01.contoso.com/AdminService/wmi/"
+        "SMS_FullCollectionMembership?$skiptoken=opaque%2Bvalue"
+    )
+
+    def respond(request: httpx2.Request) -> httpx2.Response:
+        urls.append(str(request.url))
+        if request.url.path.startswith("/AdminService/wmi/SMS_R_User("):
+            return httpx2.Response(200, json=RECORD)
+        if len(urls) == 2:
+            return httpx2.Response(
+                200,
+                json={
+                    "value": [
+                        {
+                            "CollectionID": "SMS00002",
+                            "ResourceID": 2063597568,
+                            "ResourceType": 4,
+                        }
+                    ],
+                    "@odata.nextLink": next_url,
+                },
+            )
+        return httpx2.Response(200, json={"value": []})
+
+    with client_with(httpx2.MockTransport(respond)) as client:
+        first = client.users.collection_memberships(2063597568, limit=1)
+        client.users.next_collection_memberships_page(first)
+    assert urls[2] == next_url
+    assert sum("SMS_R_User" in url for url in urls) == 1

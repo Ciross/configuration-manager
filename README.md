@@ -127,6 +127,23 @@ Use `client.users.next_page(page)` for explicit pagination or
 The typed resource projects only fields represented by the public `User` model;
 use `client.raw.wmi` when arbitrary `SMS_R_User` fields are needed.
 
+User-to-Collection membership exposes Collection IDs without performing hidden
+Collection lookups:
+
+```python
+with ConfigManager(server="cm01.contoso.com") as client:
+    memberships = client.users.collection_memberships(2063597568)
+
+    for membership in memberships.items:
+        print(membership.collection_id)
+```
+
+Use `client.users.next_collection_memberships_page(...)` for explicit
+pagination or `client.users.iter_collection_memberships(...)` for lazy
+iteration. When full Collection metadata (including its name) is needed, the
+caller can explicitly request
+`client.collections.get(membership.collection_id)`.
+
 ### Typed collections
 
 The second high-level resource maps the WMI `SMS_Collection` entity to an
