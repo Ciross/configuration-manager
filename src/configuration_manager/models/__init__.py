@@ -2,6 +2,7 @@
 
 from .collection import Collection, CollectionType
 from .collection_device_member import CollectionDeviceMember
+from .collection_user_member import CollectionUserMember
 from .device import Device
 from .device_collection_membership import DeviceCollectionMembership
 from .user import User
@@ -11,6 +12,7 @@ __all__ = (
     "Collection",
     "CollectionDeviceMember",
     "CollectionType",
+    "CollectionUserMember",
     "Device",
     "DeviceCollectionMembership",
     "User",

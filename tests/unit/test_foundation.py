@@ -248,6 +248,7 @@ def test_public_exports_are_curated() -> None:
         "AuthorizationError",
         "Collection",
         "CollectionDeviceMember",
+        "CollectionUserMember",
         "CollectionType",
         "ConfigManager",
         "ConfigurationError",

@@ -8,7 +8,12 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
 
 from ..exceptions import NotFoundError, QueryError
-from ..models import Collection, CollectionDeviceMember, CollectionType
+from ..models import (
+    Collection,
+    CollectionDeviceMember,
+    CollectionType,
+    CollectionUserMember,
+)
 from ..pagination import Page
 from ..transport import (
     AdminServiceSurface,
@@ -36,6 +41,21 @@ class _CollectionDeviceMembersContinuation:
     owner: object
     collection_id: str
     continuation: _Continuation
+
+
+@dataclass(frozen=True, slots=True)
+class _CollectionUserMembersContinuation:
+    owner: object
+    collection_id: str
+    continuation: _Continuation
+
+
+_COLLECTION_USER_MEMBER_SELECT = (
+    "CollectionID",
+    "ResourceID",
+    "ResourceType",
+    "Name",
+)
 
 
 def _odata_string_literal(value: str) -> str:
@@ -119,6 +139,45 @@ def _map_collection_device_member(
     return CollectionDeviceMember(returned_collection_id, device_id, device_name)
 
 
+def _map_collection_user_member(
+    record: RawRecord, collection_id: str
+) -> CollectionUserMember:
+    """Map one validated User membership record to its relationship model."""
+    returned_collection_id = record.get("CollectionID")
+    if (
+        not isinstance(returned_collection_id, str)
+        or not returned_collection_id.strip()
+    ):
+        raise QueryError(
+            "Collection user member field CollectionID must be a non-empty string"
+        )
+    if returned_collection_id != collection_id:
+        raise QueryError(
+            "Collection user member field CollectionID does not match the query"
+        )
+
+    user_id = record.get("ResourceID")
+    if isinstance(user_id, bool) or not isinstance(user_id, int) or user_id <= 0:
+        raise QueryError(
+            "Collection user member field ResourceID must be a positive integer"
+        )
+
+    resource_type = record.get("ResourceType")
+    if (
+        isinstance(resource_type, bool)
+        or not isinstance(resource_type, int)
+        or resource_type != 4
+    ):
+        raise QueryError(
+            "Collection user member field ResourceType must identify a User resource"
+        )
+
+    user_name = record.get("Name")
+    if user_name is not None and not isinstance(user_name, str):
+        raise QueryError("Collection user member field Name has an invalid type")
+    return CollectionUserMember(returned_collection_id, user_id, user_name)
+
+
 class Collections:
     """Read-only access to AdminService WMI SMS_Collection entities."""
 
@@ -149,6 +208,21 @@ class Collections:
         return Page[CollectionDeviceMember]._from_transport(
             items,
             _CollectionDeviceMembersContinuation(self, collection_id, continuation),
+        )
+
+    def _map_user_members_page(
+        self, raw_page: RawPage, collection_id: str
+    ) -> Page[CollectionUserMember]:
+        items = tuple(
+            _map_collection_user_member(record, collection_id)
+            for record in raw_page.items
+        )
+        if raw_page._continuation is None:
+            return Page(items)
+        continuation = cast("_Continuation", raw_page._continuation)
+        return Page[CollectionUserMember]._from_transport(
+            items,
+            _CollectionUserMembersContinuation(self, collection_id, continuation),
         )
 
     def list(self, *, limit: int | None = None) -> Page[Collection]:
@@ -246,6 +320,72 @@ class Collections:
             if not page.has_next:
                 return
             page = self.next_device_members_page(page)
+
+    def user_members(
+        self, id: str, *, limit: int | None = None
+    ) -> Page[CollectionUserMember]:
+        """Return one page of actual User members for a User collection."""
+        self._validate_id(id)
+        if limit is not None and (
+            not isinstance(limit, int)  # pyright: ignore[reportUnnecessaryIsInstance]
+            or isinstance(limit, bool)
+            or limit <= 0
+        ):
+            raise ValueError("limit must be a positive integer or None")
+        collection = self.get(id)
+        if collection.collection_type is not CollectionType.USER:
+            raise ValueError("collection must be a user collection")
+        transport = self._client._provider_transport()
+        return self._map_user_members_page(
+            transport.query_entities(
+                EntityQuery(
+                    surface=AdminServiceSurface.WMI,
+                    entity="SMS_FullCollectionMembership",
+                    options=ODataQueryOptions(
+                        filter=(
+                            f"CollectionID eq {_odata_string_literal(id)} "
+                            "and ResourceType eq 4"
+                        ),
+                        select=_COLLECTION_USER_MEMBER_SELECT,
+                        top=limit,
+                    ),
+                )
+            ),
+            id,
+        )
+
+    def next_user_members_page(
+        self, page: Page[CollectionUserMember]
+    ) -> Page[CollectionUserMember]:
+        """Return the next User-member page produced by this manager."""
+        if page._continuation is None:
+            raise ValueError("page has no continuation")
+        wrapped = page._continuation
+        if (
+            not isinstance(wrapped, _CollectionUserMembersContinuation)
+            or wrapped.owner is not self
+        ):
+            raise ValueError("page did not originate from this Collections manager")
+        transport = self._client._provider_transport()
+        return self._map_user_members_page(
+            transport.query_entities(
+                EntityQuery(
+                    surface=AdminServiceSurface.WMI,
+                    entity="SMS_FullCollectionMembership",
+                    continuation=wrapped.continuation,
+                )
+            ),
+            wrapped.collection_id,
+        )
+
+    def iter_user_members(self, id: str) -> Iterator[CollectionUserMember]:
+        """Traverse a collection's User members lazily."""
+        page = self.user_members(id)
+        while True:
+            yield from page.items
+            if not page.has_next:
+                return
+            page = self.next_user_members_page(page)
 
     @staticmethod
     def _validate_id(id: str) -> None:

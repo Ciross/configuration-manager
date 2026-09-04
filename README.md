@@ -188,6 +188,22 @@ Use `next_device_members_page()` for explicit pagination or
 `iter_device_members()` to traverse the server continuations lazily. The root
 collection is resolved first to ensure that it is a Device collection.
 
+Actual User members of a User collection are likewise exposed as immutable
+`CollectionUserMember` relationship values:
+
+```python
+with ConfigManager(server="cm01.contoso.com") as client:
+    members = client.collections.user_members("SMS00002", limit=10)
+
+    for member in members.items:
+        print(member.user_id, member.user_name)
+```
+
+Use `next_user_members_page()` for explicit pagination or
+`iter_user_members()` for lazy traversal. `user_members()` filters membership
+records to actual User resources; User Groups that may also occur in a User
+collection are intentionally excluded.
+
 ### Raw provider access
 
 The raw API also queries AdminService's WMI provider surface:
