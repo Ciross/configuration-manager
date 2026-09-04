@@ -17,6 +17,7 @@ from configuration_manager import (
     Device,
     DeviceCollectionMembership,
     User,
+    UserCollectionMembership,
 )
 from configuration_manager.adminservice import (
     AdminService,
@@ -366,3 +367,45 @@ def test_public_users_get_visible_user() -> None:
         fetched = client.users.get(user.id)
     assert isinstance(fetched, User)
     assert fetched.id == user.id
+
+
+@pytest.mark.live
+def test_public_user_collection_memberships() -> None:
+    """Validate typed User-to-Collection membership queries."""
+    if sys.platform != "win32":
+        pytest.skip("Integrated Authentication validation requires Windows")
+    server = os.environ.get("CONFIGURATION_MANAGER_LIVE_SERVER")
+    if not server:
+        pytest.skip("CONFIGURATION_MANAGER_LIVE_SERVER is not configured")
+    with ConfigManager(server=server) as client:
+        users = client.users.list(limit=10)
+        if not users.items:
+            pytest.skip("the current identity has no visible users")
+        user = users.items[0]
+        page = client.users.collection_memberships(user.id, limit=10)
+    for membership in page.items:
+        assert isinstance(membership, UserCollectionMembership)
+        assert membership.user_id == user.id
+        assert isinstance(membership.collection_id, str)
+        assert membership.collection_id.strip()
+
+
+@pytest.mark.live
+def test_public_user_collection_membership_iterator() -> None:
+    """Validate lazy traversal of User-to-Collection memberships."""
+    if sys.platform != "win32":
+        pytest.skip("Integrated Authentication validation requires Windows")
+    server = os.environ.get("CONFIGURATION_MANAGER_LIVE_SERVER")
+    if not server:
+        pytest.skip("CONFIGURATION_MANAGER_LIVE_SERVER is not configured")
+    with ConfigManager(server=server) as client:
+        users = client.users.list(limit=10)
+        if not users.items:
+            pytest.skip("the current identity has no visible users")
+        user = users.items[0]
+        iterator = client.users.iter_collection_memberships(user.id)
+        first = next(iterator, None)
+    if first is not None:
+        assert isinstance(first, UserCollectionMembership)
+        assert first.user_id == user.id
+        assert first.collection_id.strip()

@@ -265,6 +265,7 @@ def test_public_exports_are_curated() -> None:
         "TransportError",
         "TransportTimeoutError",
         "User",
+        "UserCollectionMembership",
     }
     assert set(configuration_manager.__all__) == expected
     assert cast(object, configuration_manager.ConfigManager) is ConfigManager
