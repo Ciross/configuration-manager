@@ -2,11 +2,25 @@
 
 ## Unreleased
 
+## 0.3.0 - 2026-09-04
+
 ### Added
 
-- Typed read-only User resource queries.
-- Typed read-only User-to-Collection membership queries.
-- Typed read-only Collection-to-User member queries.
+- Typed read-only User queries through `client.users`, including explicit
+  pagination and lazy iteration.
+- Immutable `User` model backed by a projected `SMS_R_User` provider
+  representation.
+- Typed read-only User-to-Collection membership queries through
+  `client.users.collection_memberships`, with explicit pagination and lazy
+  iteration.
+- Typed read-only Collection-to-User member queries through
+  `client.collections.user_members`, with explicit pagination and lazy
+  iteration.
+- Immutable `UserCollectionMembership` and `CollectionUserMember`
+  relationship models.
+- User-member filtering and validation through
+  `SMS_FullCollectionMembership`, excluding User Group resources from
+  `user_members()` with `ResourceType == 4`.
 
 ## 0.2.0 - 2026-09-03
 
